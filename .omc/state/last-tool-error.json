@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd /Users/yongjunwu/trea/autoJieDan/automaton && pnpm exec tsc --noEmit\",\"description\":\"Check TypeScript compilation\"}",
-  "error": "Exit code 2\nsrc/anp/did.ts(28,3): error TS1131: Property or signature expected.\nsrc/anp/did.ts(38,1): error TS1128: Declaration or statement expected.\nsrc/anp/did.ts(76,3): error TS1131: Property or signature expected.\nsrc/anp/did.ts(78,1): error TS1128: Declaration or statement expected.\n\nsrc/anp/did.ts(28,3): error TS1131: Property or signature expected.\nsrc/anp/did.ts(38,1): error TS1128: Declaration or statement expected.\nsrc/anp/did.ts(76,3): error TS1131: Property or signature expected.\nsr...",
-  "timestamp": "2026-02-25T16:06:31.400Z",
-  "retry_count": 5
+  "tool_input_preview": "{\"command\":\"cd /Users/yongjunwu/trea/autoJieDan/automaton && pnpm test -- src/__tests__/anp/encryption.test.ts --reporter=verbose 2>&1\",\"timeout\":60000,\"description\":\"Run encryption tests again after ...",
+  "error": "Exit code 1\n\n> @conway/automaton@0.2.0 test /Users/yongjunwu/trea/autoJieDan/automaton\n> vitest run -- src/__tests__/anp/encryption.test.ts --reporter=verbose\n\n\n RUN  v2.1.9 /Users/yongjunwu/trea/autoJieDan/automaton\n\n ❯ src/__tests__/orchestration/orchestrator.test.ts (0 test)\n ✓ src/__tests__/integration/inference-failover.test.ts (17 tests) 41ms\n ❯ src/__tests__/memory.test.ts (0 test)\n ✓ src/__tests__/orchestration/health-monitor.test.ts (22 tests) 118ms\n ✓ src/__tests__/soul.test.ts (41 tes...",
+  "timestamp": "2026-02-25T16:38:05.694Z",
+  "retry_count": 2
 }

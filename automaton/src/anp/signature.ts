@@ -43,22 +43,34 @@ export function hashPayload(payload: ANPPayload): Buffer {
 // ============================================================================
 
 /**
- * 创建签名
+ * 创建签名 (使用 KeyObject)
  * @param payload - 消息负载
- * @param privateKey - ECDSA 私钥
+ * @param privateKey - ECDSA 私钥 (KeyObject)
  * @param keyId - 密钥标识符
  * @returns ANP 签名
  */
 export function signPayload(
-  payload: ANPPayload,
-  privateKey: crypto.KeyObject,
+  payload: ANPPayload | Record<string, unknown>,
+  privateKey: crypto.KeyObject | Buffer,
   keyId: string
 ): ANPSignature {
   const payloadBytes = Buffer.from(JSON.stringify(payload), "utf-8");
   const timestamp = new Date().toISOString();
 
-  // 使用 Node.js crypto.sign 进行签名
-  const signatureBuffer = crypto.sign(null, payloadBytes, privateKey);
+  let signatureBuffer: Buffer;
+
+  if (Buffer.isBuffer(privateKey)) {
+    // 使用 Buffer (DER 格式) 签名 - 需要先转换为 KeyObject
+    const keyObject = crypto.createPrivateKey({
+      key: privateKey,
+      format: "der",
+      type: "sec1",
+    });
+    signatureBuffer = crypto.sign(null, payloadBytes, keyObject);
+  } else {
+    // 使用 KeyObject 签名
+    signatureBuffer = crypto.sign(null, payloadBytes, privateKey);
+  }
 
   return {
     type: "EcdsaSecp256r1Signature2019",

@@ -84,9 +84,27 @@
   },
   "hotPaths": [
     {
+      "path": "automaton/src/anp/encryption.ts",
+      "accessCount": 6,
+      "lastAccessed": 1772037240433,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/anp/signature.ts",
+      "accessCount": 6,
+      "lastAccessed": 1772037391471,
+      "type": "file"
+    },
+    {
       "path": "nanobot/nanobot/anp/__init__.py",
       "accessCount": 5,
       "lastAccessed": 1772035344522,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/anp/types.ts",
+      "accessCount": 5,
+      "lastAccessed": 1772037332398,
       "type": "file"
     },
     {
@@ -114,12 +132,6 @@
       "type": "file"
     },
     {
-      "path": "automaton/src/anp/types.ts",
-      "accessCount": 4,
-      "lastAccessed": 1772034655614,
-      "type": "file"
-    },
-    {
       "path": "nanobot/nanobot/anp/types.py",
       "accessCount": 4,
       "lastAccessed": 1772035897224,
@@ -144,9 +156,9 @@
       "type": "file"
     },
     {
-      "path": "automaton/src/anp/signature.ts",
+      "path": "automaton/src/__tests__/anp/encryption.test.ts",
       "accessCount": 3,
-      "lastAccessed": 1772035885817,
+      "lastAccessed": 1772037449366,
       "type": "file"
     },
     {
@@ -321,6 +333,12 @@
       "path": "nanobot/tests/anp/test_signature.py",
       "accessCount": 1,
       "lastAccessed": 1772036030142,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/anp/encryption.py",
+      "accessCount": 1,
+      "lastAccessed": 1772036989167,
       "type": "file"
     }
   ],
