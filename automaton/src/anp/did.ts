@@ -7,6 +7,8 @@
  */
 
 import * as crypto from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 import { ulid } from "ulid";
 import type {
   DidDocument,
@@ -22,18 +24,16 @@ import { AUTOMATON_DID, NANOBOT_DID } from "./types.js";
 
 /**
  * 生成 ECDSA P-256 密钥对
- * @returns {privateKey: string, publicKey: string } PEM 格式密钥对
+ * @returns PEM 格式密钥对
  */
-export function generateKeyPair(): {
-  const privateKey = crypto.generateKeyPairSync("ec", {
+export function generateKeyPair(): { privateKey: string; publicKey: string } {
+  const keyPair = crypto.generateKeyPairSync("ec", {
     namedCurve: "prime256v1",
   });
 
-  const publicKey = privateKey.publicKey;
-
   return {
-    privateKey: privateKey.export({ type: "sec1", format: "pem" }),
-    publicKey: publicKey.export({ type: "spki", format: "pem" }),
+    privateKey: keyPair.privateKey.export({ type: "sec1", format: "pem" }) as string,
+    publicKey: keyPair.publicKey.export({ type: "spki", format: "pem" }) as string,
   };
 }
 
@@ -44,7 +44,7 @@ export function generateKeyPair(): {
  */
 export function importPrivateKey(pem: string): crypto.KeyObject {
   const privateKey = crypto.createPrivateKey(pem);
-  if (privateKey.type !== "sec1" || privateKey.asymmetricKeyType !== "ec") {
+  if (privateKey.asymmetricKeyType !== "ec") {
     throw new Error("Invalid private key: expected ECDSA P-256");
   }
   return privateKey;
@@ -57,7 +57,7 @@ export function importPrivateKey(pem: string): crypto.KeyObject {
  */
 export function importPublicKey(pem: string): crypto.KeyObject {
   const publicKey = crypto.createPublicKey(pem);
-  if (publicKey.type !== "spki" || publicKey.asymmetricKeyType !== "ec") {
+  if (publicKey.asymmetricKeyType !== "ec") {
     throw new Error("Invalid public key: expected ECDSA P-256");
   }
   return publicKey;
@@ -67,14 +67,27 @@ export function importPublicKey(pem: string): crypto.KeyObject {
 // 公钥转换为 JWK 格式
 // ============================================================================
 
+/** JWK 格式公钥 */
+export interface JwkPublicKey {
+  kty: "EC";
+  crv: "P-256";
+  x: string;
+  y: string;
+}
+
 /**
  * 将公钥转换为 JWK 格式
  * @param publicKey - ECDSA 公钥
  * @returns JWK 对象
  */
-export function publicKeyToJwk(publicKey: crypto.KeyObject): {
-  const jwk = publicKey.export({ format: "jwk" });
-  return JSON.parse(jwk.toString("utf8"));
+export function publicKeyToJwk(publicKey: crypto.KeyObject): JwkPublicKey {
+  const jwk = publicKey.export({ format: "jwk" }) as JwkPublicKey;
+  return {
+    kty: "EC",
+    crv: "P-256",
+    x: jwk.x,
+    y: jwk.y,
+  };
 }
 
 /**
@@ -82,10 +95,14 @@ export function publicKeyToJwk(publicKey: crypto.KeyObject): {
  * @param jwk - JWK 对象
  * @returns ECDSA 公钥
  */
-export function jwkToPublicKey(jwk: { kty: string; crv: string; x: string; y: string }): crypto.KeyObject {
-  const jwkStr = JSON.stringify(jwk);
+export function jwkToPublicKey(jwk: JwkPublicKey): crypto.KeyObject {
   return crypto.createPublicKey({
-    key: jwkStr,
+    key: {
+      kty: jwk.kty,
+      crv: jwk.crv,
+      x: jwk.x,
+      y: jwk.y,
+    },
     format: "jwk",
   });
 }
@@ -197,7 +214,7 @@ export function resolveDid(did: string): DidDocument | undefined {
 
   // 对于已知的 DID，返回预配置文档
   if (did === AUTOMATON_DID || did === NANOBOT_DID) {
-    // 在实际应用中， 这些会从配置或持久化存储加载
+    // 在实际应用中，这些会从配置或持久化存储加载
     throw new Error(`DID not found: ${did}`);
   }
 
@@ -230,15 +247,14 @@ export function getLocalDid(agentType: "automaton" | "nanobot"): string {
  */
 export function getKeyStorePath(): string {
   const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? "";
-  return `${homeDir}/.automaton/keys`;
+  return path.join(homeDir, ".automaton", "keys");
 }
 
 /**
- * 磀保密钥存储目录存在
+ * 确保密钥存储目录存在
  */
 export function ensureKeyStorePath(): void {
   const keyStorePath = getKeyStorePath();
-  const fs = require("fs");
   if (!fs.existsSync(keyStorePath)) {
     fs.mkdirSync(keyStorePath, { recursive: true });
   }
@@ -252,8 +268,8 @@ export function ensureKeyStorePath(): void {
 export function getPrivateKeyPath(did: string): string {
   const keyStorePath = getKeyStorePath();
   // 将 DID 转换为安全的文件名
-  const safeName = did.replace(/[:/]/g, "-").replace(/[:/]/g, "_");
-  return `${keyStorePath}/${safeName}_private.pem`;
+  const safeName = did.replace(/[:/]/g, "_");
+  return path.join(keyStorePath, `${safeName}_private.pem`);
 }
 
 /**
@@ -265,7 +281,7 @@ export function savePrivateKey(did: string, privateKey: crypto.KeyObject): void 
   ensureKeyStorePath();
   const privateKeyPath = getPrivateKeyPath(did);
   const pem = privateKey.export({ type: "sec1", format: "pem" });
-  require("fs").writeFileSync(privateKeyPath, pem, { mode: 0o600 });
+  fs.writeFileSync(privateKeyPath, pem, { mode: 0o600 });
 }
 
 /**
@@ -275,7 +291,6 @@ export function savePrivateKey(did: string, privateKey: crypto.KeyObject): void 
  */
 export function loadPrivateKey(did: string): crypto.KeyObject | undefined {
   const privateKeyPath = getPrivateKeyPath(did);
-  const fs = require("fs");
 
   if (!fs.existsSync(privateKeyPath)) {
     return undefined;

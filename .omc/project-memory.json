@@ -120,6 +120,12 @@
       "type": "file"
     },
     {
+      "path": "nanobot/nanobot/anp/types.py",
+      "accessCount": 4,
+      "lastAccessed": 1772035897224,
+      "type": "file"
+    },
+    {
       "path": "nanobot/nanobot/bus/events.py",
       "accessCount": 3,
       "lastAccessed": 1772032105065,
@@ -132,9 +138,15 @@
       "type": "file"
     },
     {
-      "path": "nanobot/nanobot/anp/types.py",
+      "path": "automaton/src/anp/did.ts",
       "accessCount": 3,
-      "lastAccessed": 1772035194081,
+      "lastAccessed": 1772035839757,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/anp/signature.ts",
+      "accessCount": 3,
+      "lastAccessed": 1772035885817,
       "type": "file"
     },
     {
@@ -168,15 +180,15 @@
       "type": "file"
     },
     {
-      "path": "automaton/src/anp/did.ts",
-      "accessCount": 2,
-      "lastAccessed": 1772035598994,
-      "type": "file"
-    },
-    {
       "path": "automaton/src/__tests__/anp/did.test.ts",
       "accessCount": 2,
       "lastAccessed": 1772035690889,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/anp/did.py",
+      "accessCount": 2,
+      "lastAccessed": 1772035944397,
       "type": "file"
     },
     {
@@ -294,9 +306,21 @@
       "type": "file"
     },
     {
-      "path": "nanobot/nanobot/anp/did.py",
+      "path": "nanobot/nanobot/anp/signature.py",
       "accessCount": 1,
-      "lastAccessed": 1772035143300,
+      "lastAccessed": 1772035943901,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/__tests__/anp/signature.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772036029629,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/tests/anp/test_signature.py",
+      "accessCount": 1,
+      "lastAccessed": 1772036030142,
       "type": "file"
     }
   ],

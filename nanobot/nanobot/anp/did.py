@@ -402,4 +402,4 @@ def initialize_agent_identity(
     # 注册到缓存
     register_did_document(did_document)
 
-    return did_document. private_key. public_key
+    return did_document, private_key, public_key

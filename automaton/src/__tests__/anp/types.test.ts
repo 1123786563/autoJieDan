@@ -2,37 +2,43 @@
  * @jest-environment node
  */
 
-import { describe, it, from 'ulid'
-  import { generateKeyPair, from "../../src/anp/did.js";
+import { describe, it, expect } from "vitest";
+import {
+  ANP_CONTEXT,
+  DEFAULT_CONTEXT,
+  AUTOMATON_DID,
+  NANOBOT_DID,
+  GENESIS_PROMPT_PROTOCOL,
+  ANP_ERROR_CODES,
+} from "../../anp/types.js";
 
-describe("DID Module", () => {
-  it("should generate key pair", () => {
-    const { privateKey, publicKey } = generateKeyPair();
+describe("ANP Types", () => {
+  describe("Constants", () => {
+    it("should define ANP context", () => {
+      expect(ANP_CONTEXT.ANP_V1).toBe("https://w3id.org/anp/v1");
+      expect(ANP_CONTEXT.SECURITY_V1).toBe("https://w3id.org/security/v1");
+    });
 
-    expect(privateKey).toBeDefined();
-    expect(publicKey).toBeDefined();
-    expect(typeof privateKey).toBe("string");
-    expect(typeof publicKey).toBe("string");
-  });
+    it("should define default context array", () => {
+      expect(DEFAULT_CONTEXT).toBeInstanceOf(Array);
+      expect(DEFAULT_CONTEXT.length).toBe(3);
+    });
 
-  it("should import and export keys", () => {
-    const { privateKey, publicKey }  generateKeyPair();
-    const importedPrivate = importPrivateKey(privateKey);
-    const importedPublic = importPublicKey(publicKey);
+    it("should define DID identifiers", () => {
+      expect(AUTOMATON_DID).toBe("did:anp:automaton:main");
+      expect(NANOBOT_DID).toBe("did:anp:nanobot:main");
+    });
 
-    expect(importedPrivate).toBeInstanceOf    expect(importedPrivate.algorithm).toMatchObject({ name: "EC", });
-    expect(importedPublic).toBeInstanceOf    expect(importedPublic.algorithm).toMatchObject({ name:  "EC" });
-  });
+    it("should define protocol identifier", () => {
+      expect(GENESIS_PROMPT_PROTOCOL).toBe(
+        "https://w3id.org/anp/protocols/genesis-prompt/v1"
+      );
+    });
 
-  it("should convert public key to JWK", () => {
-    const { privateKey, publicKey } = generateKeyPair();
-    const publicKey = importPublicKey(publicKey);
-
-    const jwk = publicKeyToJwk(publicKey);
-
-    expect(jwk.kty).toBe("EC");
-    expect(jwk.crv).toBe("P-256");
-    expect(jwk.x).toBeDefined();
-    expect(jwk.y).toBeDefined();
+    it("should define error codes", () => {
+      expect(ANP_ERROR_CODES.INVALID_SIGNATURE).toBe("ANP_INVALID_SIGNATURE");
+      expect(ANP_ERROR_CODES.INVALID_DID).toBe("ANP_INVALID_DID");
+      expect(ANP_ERROR_CODES.MESSAGE_EXPIRED).toBe("ANP_MESSAGE_EXPIRED");
+    });
   });
 });
