@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1772027482408,
+  "lastScanned": 1772031468858,
   "projectRoot": "/Users/yongjunwu/trea/autoJieDan",
   "techStack": {
     "languages": [],
@@ -34,90 +34,222 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "automaton": {
+      "path": "automaton",
+      "purpose": null,
+      "fileCount": 14,
+      "lastAccessed": 1772031468838,
+      "keyFiles": [
+        "ARCHITECTURE.md",
+        "CLAUDE.md",
+        "DOCUMENTATION.md",
+        "LICENSE",
+        "README.md"
+      ]
+    },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 2,
-      "lastAccessed": 1772027482394,
+      "lastAccessed": 1772031468838,
       "keyFiles": [
         "index.html",
         "融合Automaton与Nanobot的接单AI代理系统.pdf"
+      ]
+    },
+    "nanobot": {
+      "path": "nanobot",
+      "purpose": null,
+      "fileCount": 12,
+      "lastAccessed": 1772031468839,
+      "keyFiles": [
+        "CLAUDE.md",
+        "COMMUNICATION.md",
+        "Dockerfile",
+        "LICENSE",
+        "README.md"
+      ]
+    },
+    "automaton/dist": {
+      "path": "automaton/dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 12,
+      "lastAccessed": 1772031468840,
+      "keyFiles": [
+        "config.d.ts",
+        "config.d.ts.map",
+        "config.js"
       ]
     }
   },
   "hotPaths": [
     {
       "path": "",
-      "accessCount": 9,
-      "lastAccessed": 1772030682675,
+      "accessCount": 4,
+      "lastAccessed": 1772032080688,
       "type": "directory"
     },
     {
-      "path": ".claude/CLAUDE.md",
-      "accessCount": 1,
-      "lastAccessed": 1772029944723,
+      "path": "automaton/src",
+      "accessCount": 4,
+      "lastAccessed": 1772032118386,
+      "type": "directory"
+    },
+    {
+      "path": "automaton/src/types.ts",
+      "accessCount": 4,
+      "lastAccessed": 1772032123775,
       "type": "file"
     },
     {
-      "path": "automaton/package.json",
-      "accessCount": 1,
-      "lastAccessed": 1772030160554,
+      "path": "nanobot/nanobot/bus/events.py",
+      "accessCount": 3,
+      "lastAccessed": 1772032105065,
       "type": "file"
     },
     {
-      "path": "nanobot/pyproject.toml",
-      "accessCount": 1,
-      "lastAccessed": 1772030174059,
-      "type": "file"
-    },
-    {
-      "path": "automaton/README.md",
-      "accessCount": 1,
-      "lastAccessed": 1772030174072,
+      "path": "nanobot/nanobot/agent/loop.py",
+      "accessCount": 3,
+      "lastAccessed": 1772032105127,
       "type": "file"
     },
     {
       "path": "docs/融合Automaton与Nanobot的接单AI代理系统.pdf",
-      "accessCount": 1,
-      "lastAccessed": 1772030593137,
+      "accessCount": 2,
+      "lastAccessed": 1772032045012,
       "type": "file"
     },
     {
       "path": "docs/index.html",
-      "accessCount": 1,
-      "lastAccessed": 1772030593642,
+      "accessCount": 2,
+      "lastAccessed": 1772032045378,
       "type": "file"
     },
     {
-      "path": "CLAUDE.md",
-      "accessCount": 1,
-      "lastAccessed": 1772030623140,
+      "path": "nanobot/nanobot/config/schema.py",
+      "accessCount": 2,
+      "lastAccessed": 1772032072505,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/bus/queue.py",
+      "accessCount": 2,
+      "lastAccessed": 1772032118106,
       "type": "file"
     },
     {
       "path": "automaton/CLAUDE.md",
       "accessCount": 1,
-      "lastAccessed": 1772030623501,
+      "lastAccessed": 1772032024482,
       "type": "file"
     },
     {
       "path": "nanobot/CLAUDE.md",
       "accessCount": 1,
-      "lastAccessed": 1772030623839,
+      "lastAccessed": 1772032024511,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/pyproject.toml",
+      "accessCount": 1,
+      "lastAccessed": 1772032037262,
+      "type": "file"
+    },
+    {
+      "path": "automaton/package.json",
+      "accessCount": 1,
+      "lastAccessed": 1772032037289,
       "type": "file"
     },
     {
       "path": "nanobot",
       "accessCount": 1,
-      "lastAccessed": 1772030682564,
+      "lastAccessed": 1772032037694,
       "type": "directory"
-    }
-  ],
-  "userDirectives": []
-}on",
+    },
+    {
+      "path": "automaton",
       "accessCount": 1,
-      "lastAccessed": 1772030682675,
+      "lastAccessed": 1772032038562,
       "type": "directory"
+    },
+    {
+      "path": "automaton/src/replication/genesis.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032044641,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/heartbeat/daemon.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032044666,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/agent/tools/base.py",
+      "accessCount": 1,
+      "lastAccessed": 1772032072481,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/replication/messaging.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032072512,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/channels/base.py",
+      "accessCount": 1,
+      "lastAccessed": 1772032079075,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/orchestration/messaging.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032105076,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/agent/subagent.py",
+      "accessCount": 1,
+      "lastAccessed": 1772032105093,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/agent/context.py",
+      "accessCount": 1,
+      "lastAccessed": 1772032105144,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/orchestration/orchestrator.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032105418,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/agent/loop.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032105501,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot",
+      "accessCount": 1,
+      "lastAccessed": 1772032118395,
+      "type": "directory"
+    },
+    {
+      "path": "automaton/src/social/protocol.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772032123589,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/agent/tools/message.py",
+      "accessCount": 1,
+      "lastAccessed": 1772032123607,
+      "type": "file"
     }
   ],
   "userDirectives": []
