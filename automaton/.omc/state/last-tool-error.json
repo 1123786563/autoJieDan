@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd /Users/yongjunwu/trea/autoJieDan && git add automaton/src/anp/ nanobot/nanobot/anp/ .omc/autopilot/daily-development-plan.md && git commit -m \\\"$(cat <<'EOF'\\nfeat(anp): implement ANP s...",
+  "error": "Exit code 1\n(eval):14: unmatched \"\n(eval):14: unmatched \"\n\n(eval):14: unmatched \"\n(eval):14: unmatched \"",
+  "timestamp": "2026-02-25T15:56:24.342Z",
+  "retry_count": 1
+}

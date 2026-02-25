@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"cd /Users/yongjunwu/trea/autoJieDan/automaton && pnpm exec tsc --noEmit src/anp/types.ts 2>&&1\",\"description\":\"Check TypeScript compilation for Automaton ANP types\"}",
+  "error": "Exit code 1\n(eval):1: parse error near `&'\n\n(eval):1: parse error near `&'",
+  "timestamp": "2026-02-25T15:55:55.432Z",
+  "retry_count": 2
+}

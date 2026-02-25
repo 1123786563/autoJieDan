@@ -84,6 +84,12 @@
   },
   "hotPaths": [
     {
+      "path": "nanobot/nanobot/anp/__init__.py",
+      "accessCount": 5,
+      "lastAccessed": 1772035344522,
+      "type": "file"
+    },
+    {
       "path": "",
       "accessCount": 4,
       "lastAccessed": 1772032080688,
@@ -102,6 +108,18 @@
       "type": "file"
     },
     {
+      "path": "automaton/src/anp/index.ts",
+      "accessCount": 4,
+      "lastAccessed": 1772034639251,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/anp/types.ts",
+      "accessCount": 4,
+      "lastAccessed": 1772034655614,
+      "type": "file"
+    },
+    {
       "path": "nanobot/nanobot/bus/events.py",
       "accessCount": 3,
       "lastAccessed": 1772032105065,
@@ -111,6 +129,12 @@
       "path": "nanobot/nanobot/agent/loop.py",
       "accessCount": 3,
       "lastAccessed": 1772032105127,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/anp/types.py",
+      "accessCount": 3,
+      "lastAccessed": 1772035194081,
       "type": "file"
     },
     {
@@ -135,6 +159,24 @@
       "path": "nanobot/nanobot/bus/queue.py",
       "accessCount": 2,
       "lastAccessed": 1772032118106,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/__tests__/anp/types.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1772035520446,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/anp/did.ts",
+      "accessCount": 2,
+      "lastAccessed": 1772035598994,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/__tests__/anp/did.test.ts",
+      "accessCount": 2,
+      "lastAccessed": 1772035690889,
       "type": "file"
     },
     {
@@ -249,6 +291,12 @@
       "path": "nanobot/nanobot/agent/tools/message.py",
       "accessCount": 1,
       "lastAccessed": 1772032123607,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/nanobot/anp/did.py",
+      "accessCount": 1,
+      "lastAccessed": 1772035143300,
       "type": "file"
     }
   ],
