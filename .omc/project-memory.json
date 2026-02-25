@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1772027482408,
+  "projectRoot": "/Users/yongjunwu/trea/autoJieDan",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1772027482394,
+      "keyFiles": [
+        "index.html",
+        "融合Automaton与Nanobot的接单AI代理系统.pdf"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "",
+      "accessCount": 9,
+      "lastAccessed": 1772030682675,
+      "type": "directory"
+    },
+    {
+      "path": ".claude/CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1772029944723,
+      "type": "file"
+    },
+    {
+      "path": "automaton/package.json",
+      "accessCount": 1,
+      "lastAccessed": 1772030160554,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/pyproject.toml",
+      "accessCount": 1,
+      "lastAccessed": 1772030174059,
+      "type": "file"
+    },
+    {
+      "path": "automaton/README.md",
+      "accessCount": 1,
+      "lastAccessed": 1772030174072,
+      "type": "file"
+    },
+    {
+      "path": "docs/融合Automaton与Nanobot的接单AI代理系统.pdf",
+      "accessCount": 1,
+      "lastAccessed": 1772030593137,
+      "type": "file"
+    },
+    {
+      "path": "docs/index.html",
+      "accessCount": 1,
+      "lastAccessed": 1772030593642,
+      "type": "file"
+    },
+    {
+      "path": "CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1772030623140,
+      "type": "file"
+    },
+    {
+      "path": "automaton/CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1772030623501,
+      "type": "file"
+    },
+    {
+      "path": "nanobot/CLAUDE.md",
+      "accessCount": 1,
+      "lastAccessed": 1772030623839,
+      "type": "file"
+    },
+    {
+      "path": "nanobot",
+      "accessCount": 1,
+      "lastAccessed": 1772030682564,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}on",
+      "accessCount": 1,
+      "lastAccessed": 1772030682675,
+      "type": "directory"
+    }
+  ],
+  "userDirectives": []
+}
