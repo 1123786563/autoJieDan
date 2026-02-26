@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       '@types/better-sqlite3':
         specifier: ^7.6.0
         version: 7.6.13
