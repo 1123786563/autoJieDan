@@ -92,7 +92,7 @@ export interface PerformanceReport {
  * ```
  */
 export class BenchmarkRunner {
-  private results: BenchmarkResult[] = new Map<string, BenchmarkResult>();
+  private results: Map<string, BenchmarkResult> = new Map<string, BenchmarkResult>();
 
   /**
    * 运行基准测试
