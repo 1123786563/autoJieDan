@@ -49,13 +49,16 @@ describe("WebSocket Server", () => {
       // While connected, client count should be 1
       expect(server.getClientCount()).toBe(1);
 
+      // Wait for server's client:disconnected event (handles race condition)
+      const disconnectedPromise = new Promise<void>((resolve) => {
+        server.once("client:disconnected", () => resolve());
+      });
+
       // Close the connection
       ws.close();
 
-      // Wait for close to complete
-      await new Promise<void>((resolve) => {
-        ws.once("close", () => resolve());
-      });
+      // Wait for server to process the close event
+      await disconnectedPromise;
 
       // After close, client count should be 0
       expect(server.getClientCount()).toBe(0);
