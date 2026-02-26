@@ -667,7 +667,7 @@ export class TLSManager extends EventEmitter {
 
     return {
       authorized: socket.authorized,
-      authorizationError: socket.authorizationError,
+      authorizationError: socket.authorizationError?.message || "",
       peerCertificate: peerCert
         ? {
             id: peerCert.fingerprint,

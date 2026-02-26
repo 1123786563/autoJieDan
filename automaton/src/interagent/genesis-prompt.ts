@@ -464,7 +464,7 @@ export function createFailureResult(
   error: {
     message: string;
     code?: string;
-    phase?: GenesisResult["error"]["phase"];
+    phase?: "initialization" | "execution" | "validation" | "cleanup";
     recoverable?: boolean;
   },
   durationMs: number = 0

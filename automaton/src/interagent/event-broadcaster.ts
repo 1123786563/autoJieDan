@@ -672,6 +672,7 @@ export class EventBroadcaster extends EventEmitter {
             source: "broadcaster",
             priority: "high",
             payload: {},
+            metadata: {},
             requireAck: false,
           });
           break;
@@ -780,6 +781,7 @@ export class EventBroadcaster extends EventEmitter {
           payload: {
             timestamp: new Date().toISOString(),
           },
+          metadata: {},
           requireAck: false,
         });
       }

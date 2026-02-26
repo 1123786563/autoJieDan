@@ -25,16 +25,24 @@ COPY nanobot/ nanobot/
 COPY bridge/ bridge/
 RUN uv pip install --system --no-cache .
 
-# Build the WhatsApp bridge
+# Build the WhatsApp bridge (optional, may fail in restricted networks)
 WORKDIR /app/bridge
-RUN npm install && npm run build
+RUN npm install --ignore-scripts && npm run build || echo "WhatsApp bridge build skipped"
 WORKDIR /app
 
 # Create config directory
 RUN mkdir -p /root/.nanobot
 
-# Gateway default port
-EXPOSE 18790
+# Gateway default port (18790) + Interagent port (18791)
+EXPOSE 18790 18791
+
+# Health check for interagent
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:18791/health || exit 1
+
+# Set production environment
+ENV INTERAGENT_ENABLED=true
+ENV INTERAGENT_HTTP_PORT=18791
 
 ENTRYPOINT ["nanobot"]
 CMD ["status"]
