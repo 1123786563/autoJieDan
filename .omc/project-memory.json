@@ -108,9 +108,15 @@
       "type": "file"
     },
     {
+      "path": "nanobot/nanobot/interagent/websocket.py",
+      "accessCount": 5,
+      "lastAccessed": 1772073288873,
+      "type": "file"
+    },
+    {
       "path": "",
-      "accessCount": 4,
-      "lastAccessed": 1772032080688,
+      "accessCount": 5,
+      "lastAccessed": 1772077972199,
       "type": "directory"
     },
     {
@@ -162,6 +168,18 @@
       "type": "file"
     },
     {
+      "path": "automaton/src/interagent/idempotency.ts",
+      "accessCount": 3,
+      "lastAccessed": 1772072805627,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/interagent/websocket.ts",
+      "accessCount": 3,
+      "lastAccessed": 1772079396253,
+      "type": "file"
+    },
+    {
       "path": "docs/融合Automaton与Nanobot的接单AI代理系统.pdf",
       "accessCount": 2,
       "lastAccessed": 1772032045012,
@@ -204,6 +222,18 @@
       "type": "file"
     },
     {
+      "path": "automaton/src/interagent/task-manager.ts",
+      "accessCount": 2,
+      "lastAccessed": 1772072794685,
+      "type": "file"
+    },
+    {
+      "path": "nanobot",
+      "accessCount": 2,
+      "lastAccessed": 1772080166887,
+      "type": "directory"
+    },
+    {
       "path": "automaton/CLAUDE.md",
       "accessCount": 1,
       "lastAccessed": 1772032024482,
@@ -226,12 +256,6 @@
       "accessCount": 1,
       "lastAccessed": 1772032037289,
       "type": "file"
-    },
-    {
-      "path": "nanobot",
-      "accessCount": 1,
-      "lastAccessed": 1772032037694,
-      "type": "directory"
     },
     {
       "path": "automaton",
@@ -339,6 +363,24 @@
       "path": "nanobot/nanobot/anp/encryption.py",
       "accessCount": 1,
       "lastAccessed": 1772036989167,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/__tests__/interagent/health-server.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772070694630,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/__tests__/interagent/task-manager.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772072765304,
+      "type": "file"
+    },
+    {
+      "path": "automaton/src/__tests__/interagent/idempotency.test.ts",
+      "accessCount": 1,
+      "lastAccessed": 1772072765670,
       "type": "file"
     }
   ],
