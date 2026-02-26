@@ -50,6 +50,16 @@ from .poller import (
     create_nanobot_poller,
 )
 
+from .lease import (
+    Lease,
+    LeaseStatus,
+    LeaseConfig,
+    LeaseClient,
+    LeaseContext,
+    format_remaining_time,
+    is_expiring_soon,
+)
+
 __all__ = [
     # WebSocket
     "InteragentWebSocketClient",
@@ -87,4 +97,12 @@ __all__ = [
     "PollerState",
     "PollerStats",
     "create_nanobot_poller",
+    # Lease
+    "Lease",
+    "LeaseStatus",
+    "LeaseConfig",
+    "LeaseClient",
+    "LeaseContext",
+    "format_remaining_time",
+    "is_expiring_soon",
 ]
