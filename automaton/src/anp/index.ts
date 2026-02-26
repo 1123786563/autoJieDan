@@ -19,3 +19,19 @@ export {
   ANP_ERROR_CODES,
   ANPError,
 } from "./types.js";
+
+// DID 解析器导出
+export {
+  HTTPDIDResolver,
+  CompositeResolver,
+  LocalResolver,
+  getGlobalResolver,
+  setGlobalResolver,
+  resolveDID,
+} from "./resolver.js";
+
+export type {
+  ResolverConfig,
+  ResolutionResult,
+  DIDResolver,
+} from "./resolver.js";

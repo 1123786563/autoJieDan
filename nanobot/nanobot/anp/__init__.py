@@ -132,6 +132,21 @@ from nanobot.anp.encryption import (
     decrypt_message,
 )
 
+# 导入 DID 解析器模块
+from nanobot.anp.resolver import (
+    ResolutionSource,
+    ResolutionMetadata,
+    ResolutionResult,
+    ResolverConfig,
+    DIDResolver,
+    HTTPDIDResolver,
+    CompositeResolver,
+    LocalResolver,
+    get_global_resolver,
+    set_global_resolver,
+    resolve_did as resolver_resolve_did,
+)
+
 __all__ = [
     # 常量
     "ANP_CONTEXT",
@@ -246,4 +261,17 @@ __all__ = [
     "EncryptMessageOptions",
     "encrypt_message",
     "decrypt_message",
+
+    # DID 解析器
+    "ResolutionSource",
+    "ResolutionMetadata",
+    "ResolutionResult",
+    "ResolverConfig",
+    "DIDResolver",
+    "HTTPDIDResolver",
+    "CompositeResolver",
+    "LocalResolver",
+    "get_global_resolver",
+    "set_global_resolver",
+    "resolver_resolve_did",
 ]
