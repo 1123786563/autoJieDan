@@ -28,6 +28,54 @@ import { keccak256, toHex } from "viem";
 import type { Address, PrivateKeyAccount } from "viem";
 import { randomUUID } from "crypto";
 
+// ============================================================================
+// Local Execution Security: Forbidden Command Patterns
+// ============================================================================
+
+// Forbidden command patterns for local execution (defense-in-depth)
+const LOCAL_FORBIDDEN_PATTERNS: { pattern: RegExp; description: string }[] = [
+  // Self-destruction
+  { pattern: /rm\s+(-rf?\s+)?.*\.automaton/, description: "Delete .automaton directory" },
+  { pattern: /rm\s+(-rf?\s+)?.*state\.db/, description: "Delete state database" },
+  { pattern: /rm\s+(-rf?\s+)?.*wallet\.json/, description: "Delete wallet" },
+  { pattern: /rm\s+(-rf?\s+)?.*automaton\.json/, description: "Delete config" },
+  { pattern: /rm\s+(-rf?\s+)?.*heartbeat\.yml/, description: "Delete heartbeat config" },
+  { pattern: /rm\s+(-rf?\s+)?.*SOUL\.md/, description: "Delete SOUL.md" },
+  // Process killing
+  { pattern: /kill\s+.*automaton/, description: "Kill automaton process" },
+  { pattern: /pkill\s+.*automaton/, description: "Kill automaton process" },
+  { pattern: /systemctl\s+(stop|disable)\s+automaton/, description: "Stop automaton service" },
+  // Database destruction
+  { pattern: /DROP\s+TABLE/i, description: "Drop database table" },
+  { pattern: /DELETE\s+FROM\s+(turns|identity|kv|schema_version|skills|children|registry)/i, description: "Delete from critical table" },
+  { pattern: /TRUNCATE/i, description: "Truncate table" },
+  // Safety infrastructure modification
+  { pattern: /sed\s+.*injection-defense/, description: "Modify injection defense via sed" },
+  { pattern: /sed\s+.*policy-engine/, description: "Modify policy engine via sed" },
+  { pattern: /sed\s+.*audit-log/, description: "Modify audit log via sed" },
+  { pattern: />\s*.*injection-defense/, description: "Overwrite injection defense" },
+  { pattern: />\s*.*policy-engine/, description: "Overwrite policy engine" },
+  { pattern: />\s*.*audit-log/, description: "Overwrite audit log" },
+  // Credential harvesting
+  { pattern: /cat\s+.*\.ssh/, description: "Read SSH keys" },
+  { pattern: /cat\s+.*\.gnupg/, description: "Read GPG keys" },
+  { pattern: /cat\s+.*\.env/, description: "Read environment file" },
+  { pattern: /cat\s+.*wallet\.json/, description: "Read wallet file" },
+];
+
+/**
+ * Check if a command matches any forbidden pattern.
+ * Returns description of the forbidden pattern if matched, null otherwise.
+ */
+function checkForbiddenCommand(command: string): string | null {
+  for (const { pattern, description } of LOCAL_FORBIDDEN_PATTERNS) {
+    if (pattern.test(command)) {
+      return description;
+    }
+  }
+  return null;
+}
+
 interface ConwayClientOptions {
   apiUrl: string;
   apiKey: string;
@@ -108,6 +156,16 @@ export function createConwayClient(options: ConwayClientOptions): ConwayClient {
   const isLocal = !sandboxId;
 
   const execLocal = (command: string, timeout?: number): ExecResult => {
+    // SECURITY: Check command against forbidden patterns before execution
+    const forbiddenReason = checkForbiddenCommand(command);
+    if (forbiddenReason) {
+      return {
+        stdout: "",
+        stderr: `Command blocked by security policy: ${forbiddenReason}`,
+        exitCode: 126, // 126 = command not executable (convention for permission denied)
+      };
+    }
+
     try {
       const stdout = execSync(command, {
         timeout: timeout || 30_000,
