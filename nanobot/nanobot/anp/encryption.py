@@ -69,7 +69,7 @@ def compute_shared_secret(
     Returns:
         共享密钥 (bytes)
     """
-    return my_private_key.exchange(their_public_key)
+    return my_private_key.exchange(ec.ECDH(), their_public_key)
 
 
 def derive_aes_key(
@@ -141,10 +141,8 @@ def encrypt_aes(
     aesgcm = AESGCM(key)
 
     # 加密
-    if options and options.additional_data:
-        ciphertext = aesgcm.encrypt(iv, plaintext, options.additional_data)
-    else:
-        ciphertext = aesgcm.encrypt(iv, plaintext)
+    associated_data = options.additional_data if options else None
+    ciphertext = aesgcm.encrypt(iv, plaintext, associated_data)
 
     # GCM 的 tag 是最后 16 字节
     return EncryptResult(
@@ -176,10 +174,8 @@ def decrypt_aes(
     full_ciphertext = encrypted.ciphertext + encrypted.tag
 
     # 解密
-    if options and options.additional_data:
-        return aesgcm.decrypt(encrypted.iv, full_ciphertext, options.additional_data)
-    else:
-        return aesgcm.decrypt(encrypted.iv, full_ciphertext)
+    associated_data = options.additional_data if options else None
+    return aesgcm.decrypt(encrypted.iv, full_ciphertext, associated_data)
 
 
 # ============================================================================
@@ -265,8 +261,9 @@ def encrypt_message(
     from .types import ANPSignature, ProofPurpose
 
     key_id = f"{message.actor}#key-1"
+    # 直接签名 encrypted_payload (它是 Pydantic 模型)
     signature = sign_payload(
-        {"type": "EncryptedPayload", "payload": encrypted_payload.model_dump()},
+        encrypted_payload,
         sender_private_key,
         key_id,
     )
@@ -304,11 +301,16 @@ def decrypt_message(
     ephemeral_public_key_bytes = base64.b64decode(
         encrypted_message.encrypted_payload.ephemeral_public_key
     )
-    ephemeral_public_key = ec.EllipticCurvePublicNumbers.from_encoded_point(
-        data=ephemeral_public_key_bytes,
-        curve=ec.SECP256R1(),
-        backend=default_backend(),
-    ).public_key(default_backend())
+    # 解析未压缩点格式: 0x04 || X (32 bytes) || Y (32 bytes)
+    # 对于 SECP256R1，总共 65 字节
+    if ephemeral_public_key_bytes[0] != 0x04:
+        raise ValueError("Invalid point format: expected uncompressed point (0x04 prefix)")
+
+    x = int.from_bytes(ephemeral_public_key_bytes[1:33], 'big')
+    y = int.from_bytes(ephemeral_public_key_bytes[33:65], 'big')
+
+    public_numbers = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1())
+    ephemeral_public_key = public_numbers.public_key(default_backend())
 
     # 2. 计算共享密钥
     shared_secret = compute_shared_secret(
