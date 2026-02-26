@@ -10,27 +10,42 @@ import {
 } from "../../interagent/health-server.js";
 import { InteragentWebSocketServer } from "../../interagent/websocket.js";
 
+// Helper to get a random available port
+function getAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = require("net").createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 describe("HealthCheckServer", () => {
   let server: HealthCheckServer;
-  const defaultConfig: HealthServerConfig = {
-    port: 18792,
-    host: "127.0.0.1"
-  };
+  let testPort: number;
 
   beforeEach(async () => {
-    server = new HealthCheckServer(defaultConfig);
+    testPort = await getAvailablePort();
+    server = new HealthCheckServer({ port: testPort, host: "127.0.0.1" });
     await server.start();
   });
 
   afterEach(async () => {
-    await server.stop();
+    try {
+      await server.stop();
+    } catch {
+      // Ignore errors during cleanup
+    }
   });
 
   describe("Server Lifecycle", () => {
     it("should start and stop successfully", async () => {
       const status = server.getServerStatus();
       expect(status.running).toBe(true);
-      expect(status.port).toBe(defaultConfig.port);
+      expect(status.port).toBe(testPort);
 
       await server.stop();
 
@@ -38,7 +53,7 @@ describe("HealthCheckServer", () => {
     });
 
     it("should handle /health endpoint", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/health`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/health`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -48,7 +63,7 @@ describe("HealthCheckServer", () => {
     });
 
     it("should handle /status endpoint", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/status`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/status`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -58,7 +73,7 @@ describe("HealthCheckServer", () => {
     });
 
     it("should handle /ready endpoint", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/ready`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/ready`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -66,7 +81,7 @@ describe("HealthCheckServer", () => {
     });
 
     it("should handle /live endpoint", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/live`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/live`);
       const data = await res.json();
 
       expect(res.status).toBe(200);
@@ -75,15 +90,15 @@ describe("HealthCheckServer", () => {
     });
 
     it("should return 404 for unknown routes", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/unknown`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/unknown`);
       expect(res.status).toBe(404);
       const data = await res.json();
       expect(data.error).toBe("Not Found");
     });
 
     it("should return 405 for non-GET requests", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/health`, {
-        method: "POST"
+      const res = await fetch(`http://127.0.0.1:${testPort}/health`, {
+        method: "POST",
       });
       expect(res.status).toBe(405);
       const data = await res.json();
@@ -93,13 +108,16 @@ describe("HealthCheckServer", () => {
 
   describe("WebSocket Integration", () => {
     it("should reflect WebSocket server status in health check", async () => {
-      const wsConfig = { port: 18793, host: "127.0.0.1" };
-      const wsServer = new InteragentWebSocketServer(wsConfig);
+      const wsPort = await getAvailablePort();
+      const wsServer = new InteragentWebSocketServer({
+        port: wsPort,
+        host: "127.0.0.1",
+      });
       await wsServer.start();
 
       server.setWebSocketServer(wsServer);
 
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/health`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/health`);
       const data = await res.json();
 
       expect(data.status).toBe("healthy");
@@ -109,7 +127,7 @@ describe("HealthCheckServer", () => {
 
     it("should return degraded when WebSocket is not running", async () => {
       // Server without WebSocket should still be healthy initially
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/health`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/health`);
       const data = await res.json();
 
       expect(data.status).toBe("healthy");
@@ -120,7 +138,7 @@ describe("HealthCheckServer", () => {
     it("should use custom health checker", async () => {
       server.setHealthChecker(() => "degraded");
 
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/health`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/health`);
       const data = await res.json();
 
       expect(data.status).toBe("degraded");
@@ -129,7 +147,7 @@ describe("HealthCheckServer", () => {
 
   describe("CORS Headers", () => {
     it("should include CORS headers", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/health`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/health`);
       expect(res.headers.get("access-control-allow-origin")).toBe("*");
       expect(res.headers.get("access-control-allow-methods")).toContain("GET");
     });
@@ -137,24 +155,24 @@ describe("HealthCheckServer", () => {
 
   describe("Alternate Paths", () => {
     it("should handle /healthz path", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/healthz`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/healthz`);
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.status).toBeDefined();
     });
 
     it("should handle /statusz path", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/statusz`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/statusz`);
       expect(res.status).toBe(200);
     });
 
     it("should handle /readyz path", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/readyz`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/readyz`);
       expect(res.status).toBe(200);
     });
 
     it("should handle /livez path", async () => {
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/livez`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/livez`);
       expect(res.status).toBe(200);
     });
   });
@@ -164,10 +182,10 @@ describe("HealthCheckServer", () => {
       server.setStatusProvider(() => ({
         state: "running",
         creditBalance: 100,
-        currentTaskId: "task-123"
+        currentTaskId: "task-123",
       }));
 
-      const res = await fetch(`http://127.0.0.1:${defaultConfig.port}/status`);
+      const res = await fetch(`http://127.0.0.1:${testPort}/status`);
       const data = await res.json();
 
       expect(data.automaton.state).toBe("running");

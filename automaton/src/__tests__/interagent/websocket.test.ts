@@ -12,20 +12,39 @@ import {
   createHeartbeatEvent,
 } from "../../interagent/websocket.js";
 
+// Helper to get a random available port
+function getAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = require("net").createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
 describe("WebSocket Server", () => {
   let server: InteragentWebSocketServer;
-  const defaultConfig: WebSocketServerConfig = {
-    port: 18790,
-    host: "127.0.0.1",
-  };
+  let testPort: number;
 
   beforeEach(async () => {
-    server = new InteragentWebSocketServer(defaultConfig);
+    testPort = await getAvailablePort();
+    const config: WebSocketServerConfig = {
+      port: testPort,
+      host: "127.0.0.1",
+    };
+    server = new InteragentWebSocketServer(config);
     await server.start();
   });
 
   afterEach(async () => {
-    await server.stop();
+    try {
+      await server.stop();
+    } catch {
+      // Ignore errors during cleanup
+    }
   });
 
   describe("Server Lifecycle", () => {
@@ -38,7 +57,7 @@ describe("WebSocket Server", () => {
     });
 
     it("should accept connections", async () => {
-      const ws = new WebSocket(`ws://127.0.0.1:${defaultConfig.port}`);
+      const ws = new WebSocket(`ws://127.0.0.1:${testPort}`);
 
       await new Promise<void>((resolve) => {
         ws.once("open", () => {
@@ -70,7 +89,7 @@ describe("WebSocket Server", () => {
       // Connect 3 clients
       for (let i = 0; i < 3; i++) {
         const ws = new WebSocket(
-          `ws://127.0.0.1:${defaultConfig.port}?did=did:anp:client:${i}`
+          `ws://127.0.0.1:${testPort}?did=did:anp:client:${i}`
         );
         clients.push(ws);
       }
@@ -93,10 +112,11 @@ describe("WebSocket Server", () => {
     });
 
     it("should enforce max connections", async () => {
+      const limitedPort = await getAvailablePort();
       // Create a server with max 2 connections
       const limitedServer = new InteragentWebSocketServer({
-        ...defaultConfig,
-        port: 18791,
+        port: limitedPort,
+        host: "127.0.0.1",
         maxConnections: 2,
       });
 
@@ -107,20 +127,24 @@ describe("WebSocket Server", () => {
       // Connect 3 clients
       for (let i = 0; i < 3; i++) {
         clients.push(
-          new WebSocket(`ws://127.0.0.1:18791?did=did:anp:client:${i}`)
+          new WebSocket(`ws://127.0.0.1:${limitedPort}?did=did:anp:client:${i}`)
         );
       }
 
       // Wait for all to attempt connection
-      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      await new Promise<void>((resolve) => setTimeout(resolve, 200));
 
       // Only 2 should be connected
       expect(limitedServer.getClientCount()).toBeLessThanOrEqual(2);
 
       // Clean up
       for (const ws of clients) {
-        if (ws.readyState !== WebSocket.CLOSED) {
-          ws.close();
+        try {
+          if (ws.readyState !== WebSocket.CLOSED) {
+            ws.close();
+          }
+        } catch {
+          // Ignore
         }
       }
       await limitedServer.stop();
@@ -130,7 +154,7 @@ describe("WebSocket Server", () => {
   describe("Event Handling", () => {
     it("should receive and parse messages", async () => {
       const ws = new WebSocket(
-        `ws://127.0.0.1:${defaultConfig.port}?did=did:anp:test:client`
+        `ws://127.0.0.1:${testPort}?did=did:anp:test:client`
       );
 
       let receivedMessage: unknown = null;
@@ -170,7 +194,7 @@ describe("WebSocket Server", () => {
     it("should send events to specific clients", async () => {
       const clientDid = "did:anp:test:recipient";
       const ws = new WebSocket(
-        `ws://127.0.0.1:${defaultConfig.port}?did=${clientDid}`
+        `ws://127.0.0.1:${testPort}?did=${clientDid}`
       );
 
       const receivedMessages: unknown[] = [];
@@ -214,7 +238,7 @@ describe("WebSocket Server", () => {
       // Connect 3 clients
       for (let i = 0; i < 3; i++) {
         const ws = new WebSocket(
-          `ws://127.0.0.1:${defaultConfig.port}?did=did:anp:broadcast:${i}`
+          `ws://127.0.0.1:${testPort}?did=did:anp:broadcast:${i}`
         );
         const idx = i;
         ws.on("message", () => {
@@ -319,7 +343,7 @@ describe("WebSocket Server", () => {
   describe("Client Info", () => {
     it("should track client connection time", async () => {
       const ws = new WebSocket(
-        `ws://127.0.0.1:${defaultConfig.port}?did=did:anp:time:test`
+        `ws://127.0.0.1:${testPort}?did=did:anp:time:test`
       );
 
       await new Promise<void>((resolve) => {
