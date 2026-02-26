@@ -1,0 +1,147 @@
+# Docker Compose configuration for Automaton + Nanobot dual-system deployment
+# Version: 1.0.0
+# Updated: 2026-02-26
+
+services:
+  # ============================================================================
+  # Automaton - TypeScript AI Agent Runtime
+  # ============================================================================
+  automaton:
+    build:
+      context: ./automaton
+      dockerfile: Dockerfile
+    image: automaton:${AUTOMATON_VERSION:-latest}
+    container_name: automaton
+    hostname: automaton
+    restart: unless-stopped
+
+    ports:
+      - "${AUTOMATON_HTTP_PORT:-18790}:18790"  # HTTP API
+      - "${AUTOMATON_WS_PORT:-18791}:18791"    # WebSocket
+
+    environment:
+      # Node environment
+      - NODE_ENV=production
+
+      # Interagent configuration
+      - INTERAGENT_ENABLED=${INTERAGENT_ENABLED:-true}
+      - INTERAGENT_HTTP_PORT=18790
+      - INTERAGENT_WS_PORT=18791
+      - INTERAGENT_SECRET=${INTERAGENT_SECRET:?INTERAGENT_SECRET is required}
+
+      # Optional: LLM configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+      # Optional: Blockchain configuration
+      - AUTOMATON_PRIVATE_KEY=${AUTOMATON_PRIVATE_KEY:-}
+      - BASE_RPC_URL=${BASE_RPC_URL:-}
+
+    volumes:
+      # Persistent data storage
+      - automaton-data:/root/.automaton/data
+      - automaton-keys:/root/.automaton/keys
+      # Optional: Mount config file
+      - ${AUTOMATON_CONFIG_PATH:-./automaton/config.yml}:/root/.automaton/config.yml:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:18790/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - interagent-net
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # Nanobot - Python AI Assistant Framework
+  # ============================================================================
+  nanobot:
+    build:
+      context: ./nanobot
+      dockerfile: Dockerfile
+    image: nanobot:${NANOBOT_VERSION:-latest}
+    container_name: nanobot
+    hostname: nanobot
+    restart: unless-stopped
+
+    ports:
+      - "${NANOBOT_HTTP_PORT:-18792}:18791"  # HTTP API (mapped to 18792)
+      # Note: WebSocket uses same port
+
+    environment:
+      # Interagent configuration
+      - INTERAGENT_ENABLED=${INTERAGENT_ENABLED:-true}
+      - INTERAGENT_HTTP_PORT=18791
+      - INTERAGENT_AUTOMATON_URL=http://automaton:18790
+      - INTERAGENT_SECRET=${INTERAGENT_SECRET:?INTERAGENT_SECRET is required}
+
+      # Optional: LLM configuration
+      - NANOBOT_LLM_PROVIDER=${NANOBOT_LLM_PROVIDER:-openai}
+      - NANOBOT_API_KEY=${NANOBOT_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+
+      # Optional: Messaging platforms
+      - NANOBOT_TELEGRAM_TOKEN=${NANOBOT_TELEGRAM_TOKEN:-}
+      - NANOBOT_SLACK_TOKEN=${NANOBOT_SLACK_TOKEN:-}
+
+    volumes:
+      # Persistent data storage
+      - nanobot-data:/root/.nanobot
+      # Optional: Mount config file
+      - ${NANOBOT_CONFIG_PATH:-./nanobot/config.yml}:/root/.nanobot/config.yml:ro
+
+    depends_on:
+      automaton:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18791/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    networks:
+      - interagent-net
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  interagent-net:
+    driver: bridge
+    name: interagent-network
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================================================
+# Volumes
+# ============================================================================
+volumes:
+  automaton-data:
+    name: automaton-data
+    driver: local
+
+  automaton-keys:
+    name: automaton-keys
+    driver: local
+
+  nanobot-data:
+    name: nanobot-data
+    driver: local
