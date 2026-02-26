@@ -131,9 +131,21 @@
       "type": "directory"
     },
     {
+      "path": "src/__tests__/interagent/security-integration.test.ts",
+      "accessCount": 12,
+      "lastAccessed": 1772085710605,
+      "type": "file"
+    },
+    {
       "path": "src/__tests__/interagent/websocket.test.ts",
       "accessCount": 9,
       "lastAccessed": 1772072329134,
+      "type": "file"
+    },
+    {
+      "path": "src/__tests__/interagent/e2e-integration.test.ts",
+      "accessCount": 7,
+      "lastAccessed": 1772087808499,
       "type": "file"
     },
     {
@@ -149,9 +161,33 @@
       "type": "file"
     },
     {
+      "path": "src/interagent",
+      "accessCount": 5,
+      "lastAccessed": 1772085425817,
+      "type": "directory"
+    },
+    {
       "path": "src/__tests__/interagent/task-lifecycle.test.ts",
       "accessCount": 4,
       "lastAccessed": 1772074742628,
+      "type": "file"
+    },
+    {
+      "path": "src/interagent/tls-manager.ts",
+      "accessCount": 4,
+      "lastAccessed": 1772085585757,
+      "type": "file"
+    },
+    {
+      "path": "src/interagent/key-manager.ts",
+      "accessCount": 4,
+      "lastAccessed": 1772085697091,
+      "type": "directory"
+    },
+    {
+      "path": "src/interagent/task-manager.ts",
+      "accessCount": 4,
+      "lastAccessed": 1772087038143,
       "type": "file"
     },
     {
@@ -167,22 +203,28 @@
       "type": "file"
     },
     {
-      "path": "src/interagent/task-manager.ts",
-      "accessCount": 3,
-      "lastAccessed": 1772073181860,
-      "type": "file"
-    },
-    {
       "path": "src/interagent/idempotency.ts",
       "accessCount": 3,
       "lastAccessed": 1772073187761,
       "type": "file"
     },
     {
-      "path": "src",
-      "accessCount": 2,
-      "lastAccessed": 1772068802682,
+      "path": "src/interagent/access-control.ts",
+      "accessCount": 3,
+      "lastAccessed": 1772085447928,
       "type": "directory"
+    },
+    {
+      "path": "src",
+      "accessCount": 3,
+      "lastAccessed": 1772087029679,
+      "type": "directory"
+    },
+    {
+      "path": "src/__tests__/interagent/fault-recovery.test.ts",
+      "accessCount": 3,
+      "lastAccessed": 1772088354137,
+      "type": "file"
     },
     {
       "path": "src/__tests__/interagent/idempotency.test.ts",
@@ -231,12 +273,6 @@
       "accessCount": 1,
       "lastAccessed": 1772072043569,
       "type": "file"
-    },
-    {
-      "path": "src/interagent",
-      "accessCount": 1,
-      "lastAccessed": 1772074505333,
-      "type": "directory"
     },
     {
       "path": "src/interagent/dlq.ts",

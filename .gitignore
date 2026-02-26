@@ -23,3 +23,6 @@ botpy.log
 tests/
 node_modules/
 dist/
+.env
+.env.test
+.omc/

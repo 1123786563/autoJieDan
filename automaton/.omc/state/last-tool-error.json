@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd /Users/yongjunwu/trea/autoJieDan && git add automaton/src/interagent/retry.ts automaton/src/__tests__/interagent/retry.test.ts nanobot/nanobot/interagent/retry.py nanobot/tests/interage...",
-  "error": "Exit code 1\n下列路径根据您的一个 .gitignore 文件而被忽略：\nnanobot/tests\n提示： 如果您确实想添加它们，请使用 -f 选项。\n提示： Disable this message with \"git config set advice.addIgnoredFile false\"\n\n下列路径根据您的一个 .gitignore 文件而被忽略：\nnanobot/tests\n提示： 如果您确实想添加它们，请使用 -f 选项。\n提示： Disable this message with \"git config set advice.addIgnoredFile false\"",
-  "timestamp": "2026-02-26T03:07:37.454Z",
+  "tool_input_preview": "{\"command\":\"pnpm test src/__tests__/interagent/e2e-integration.test.ts 2>&1\",\"timeout\":120000,\"description\":\"运行更新后的 E2E 集成测试\"}",
+  "error": "Exit code 1\n\n> @conway/automaton@0.2.0 test /Users/yongjunwu/trea/autoJieDan/automaton\n> vitest run src/__tests__/interagent/e2e-integration.test.ts\n\n\n RUN  v2.1.9 /Users/yongjunwu/trea/autoJieDan/automaton\n\n ❯ src/__tests__/interagent/e2e-integration.test.ts (13 tests | 1 failed) 2328ms\n   ✓ End-to-End Integration Tests > Task Management Integration > should handle task retry with exponential backoff 2274ms\n   × End-to-End Integration Tests > Task Management Integration > should handle task lea...",
+  "timestamp": "2026-02-26T06:35:39.588Z",
   "retry_count": 1
 }
