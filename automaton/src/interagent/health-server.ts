@@ -220,6 +220,8 @@ export class HealthCheckServer extends EventEmitter {
         await this.handleReady(req, res);
       } else if (url === "/live" || url === "/livez") {
         await this.handleLive(req, res);
+      } else if (url === "/metrics") {
+        await this.handleMetrics(req, res);
       } else {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Not Found" }));
@@ -382,6 +384,27 @@ export class HealthCheckServer extends EventEmitter {
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(response));
+  }
+
+  /**
+   * 处理 /metrics 请求 - Prometheus 指标
+   */
+  private async handleMetrics(
+    _req: http.IncomingMessage,
+    res: http.ServerResponse
+  ): Promise<void> {
+    try {
+      // 动态导入避免循环依赖
+      const { getMetrics, getContentType } = await import("./metrics.js");
+      const metrics = await getMetrics();
+
+      res.writeHead(200, { "Content-Type": getContentType() });
+      res.end(metrics);
+    } catch (error) {
+      // 如果指标模块不可用，返回空指标
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("# Metrics module not available\n");
+    }
   }
 
   /**
