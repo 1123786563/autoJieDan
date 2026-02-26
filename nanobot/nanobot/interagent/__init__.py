@@ -27,6 +27,29 @@ from .health_server import (
     create_simple_status_provider,
 )
 
+from .filters import (
+    TaskStatus,
+    TaskPriority,
+    TaskType,
+    TaskFilter,
+    Task,
+    TaskMatcher,
+    matches_filter,
+    filter_tasks,
+    sort_by_priority,
+    create_pending_filter,
+    create_high_priority_filter,
+    create_for_nanobot_filter,
+)
+
+from .poller import (
+    TaskPoller,
+    PollerConfig,
+    PollerState,
+    PollerStats,
+    create_nanobot_poller,
+)
+
 __all__ = [
     # WebSocket
     "InteragentWebSocketClient",
@@ -45,4 +68,23 @@ __all__ = [
     "NanobotStatus",
     "create_default_health_checker",
     "create_simple_status_provider",
+    # Filters
+    "TaskStatus",
+    "TaskPriority",
+    "TaskType",
+    "TaskFilter",
+    "Task",
+    "TaskMatcher",
+    "matches_filter",
+    "filter_tasks",
+    "sort_by_priority",
+    "create_pending_filter",
+    "create_high_priority_filter",
+    "create_for_nanobot_filter",
+    # Poller
+    "TaskPoller",
+    "PollerConfig",
+    "PollerState",
+    "PollerStats",
+    "create_nanobot_poller",
 ]
