@@ -1,0 +1,223 @@
+# =============================================================================
+# CI/CD Pipeline for Automaton + Nanobot
+# Version: 1.0.0
+# =============================================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.11'
+  PNPM_VERSION: '10.28.1'
+
+jobs:
+  # ===========================================================================
+  # Automaton Tests (TypeScript)
+  # ===========================================================================
+  test-automaton:
+    name: Test Automaton
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: automaton
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: automaton/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Run tests
+        run: pnpm test:ci
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: automaton/coverage/lcov.info
+          flags: automaton
+          fail_ci_if_error: false
+
+  # ===========================================================================
+  # Nanobot Tests (Python)
+  # ===========================================================================
+  test-nanobot:
+    name: Test Nanobot
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: nanobot
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: nanobot/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run linting
+        run: ruff check .
+
+      - name: Run tests
+        run: pytest --cov --cov-report=xml -v
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: nanobot/coverage.xml
+          flags: nanobot
+          fail_ci_if_error: false
+
+  # ===========================================================================
+  # Build Docker Images
+  # ===========================================================================
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-automaton, test-nanobot]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Automaton
+        id: meta-automaton
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/automaton
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push Automaton
+        uses: docker/build-push-action@v5
+        with:
+          context: ./automaton
+          push: true
+          tags: ${{ steps.meta-automaton.outputs.tags }}
+          labels: ${{ steps.meta-automaton.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for Nanobot
+        id: meta-nanobot
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/nanobot
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push Nanobot
+        uses: docker/build-push-action@v5
+        with:
+          context: ./nanobot
+          push: true
+          tags: ${{ steps.meta-nanobot.outputs.tags }}
+          labels: ${{ steps.meta-nanobot.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ===========================================================================
+  # Security Scan
+  # ===========================================================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [test-automaton, test-nanobot]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (Automaton)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './automaton'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy vulnerability scanner (Nanobot)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: './nanobot'
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+  # ===========================================================================
+  # Deploy (Manual Trigger)
+  # ===========================================================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build-images, security-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://automaton.example.com
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "Deployment would happen here"
+          echo "Image tags:"
+          echo "  automaton: ghcr.io/${{ github.repository }}/automaton:${{ github.sha }}"
+          echo "  nanobot: ghcr.io/${{ github.repository }}/nanobot:${{ github.sha }}"
+          # In production, this would:
+          # 1. SSH to production server
+          # 2. Pull latest images
+          # 3. Run docker-compose up -d
+          # 4. Run health checks
+          # 5. Notify on success/failure

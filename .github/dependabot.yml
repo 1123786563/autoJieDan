@@ -1,0 +1,73 @@
+# Dependabot Configuration
+# Version: 1.0.0
+
+version: 2
+
+updates:
+  # Automaton (TypeScript) dependencies
+  - package-ecosystem: "npm"
+    directory: "/automaton"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "1123786563"
+    labels:
+      - "dependencies"
+      - "automaton"
+    commit-message:
+      prefix: "deps(automaton)"
+
+  # Nanobot (Python) dependencies
+  - package-ecosystem: "pip"
+    directory: "/nanobot"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "1123786563"
+    labels:
+      - "dependencies"
+      - "nanobot"
+    commit-message:
+      prefix: "deps(nanobot)"
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/automaton"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 2
+    labels:
+      - "docker"
+      - "automaton"
+
+  - package-ecosystem: "docker"
+    directory: "/nanobot"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 2
+    labels:
+      - "docker"
+      - "nanobot"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 3
+    labels:
+      - "ci/cd"
+    commit-message:
+      prefix: "ci"
