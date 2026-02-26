@@ -346,6 +346,9 @@ class KeyManager(EventEmitter):
         self.emit("key:generated", key)
         return key
 
+    # PBKDF2 默认迭代次数（OWASP 推荐 >= 600,000 for SHA256）
+    PBKDF2_ITERATIONS = 600000
+
     def generate_key_from_passphrase(
         self,
         purpose: KeyPurpose,
@@ -355,9 +358,10 @@ class KeyManager(EventEmitter):
         expires_in: Optional[int] = None,
         salt: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        iterations: Optional[int] = None,
     ) -> Key:
         """
-        从密码生成密钥
+        从密码生成密钥（使用 PBKDF2 安全派生）
 
         Args:
             purpose: 密钥用途
@@ -365,18 +369,32 @@ class KeyManager(EventEmitter):
             algorithm: 密钥算法
             name: 密钥名称
             expires_in: 过期时间（毫秒）
-            salt: 盐值
+            salt: 盐值（十六进制字符串，如未提供则生成随机盐）
             metadata: 元数据
+            iterations: PBKDF2 迭代次数（默认 600,000）
 
         Returns:
             生成的密钥
         """
         algo = algorithm or self._config.default_algorithm
-        actual_salt = salt or secrets.token_hex(16)
-        key_material = passphrase + actual_salt
         key_bytes = self._get_key_length(algo)
 
-        derived_key = hashlib.sha256(key_material.encode()).digest()[:key_bytes]
+        # 生成或使用提供的盐值（使用字节形式）
+        if salt:
+            salt_bytes = bytes.fromhex(salt)
+        else:
+            salt_bytes = secrets.token_bytes(16)
+            salt = salt_bytes.hex()
+
+        # 使用 PBKDF2-HMAC-SHA256 安全派生密钥
+        actual_iterations = iterations or self.PBKDF2_ITERATIONS
+        derived_key = hashlib.pbkdf2_hmac(
+            "sha256",
+            passphrase.encode("utf-8"),
+            salt_bytes,
+            actual_iterations,
+            dklen=key_bytes,
+        )
 
         key_id = self._generate_key_id()
         now = datetime.now()
@@ -394,7 +412,12 @@ class KeyManager(EventEmitter):
             created_at=now,
             expires_at=expires_at,
             status=KeyStatus.ACTIVE,
-            metadata={**(metadata or {}), "salt": actual_salt},
+            metadata={
+                **(metadata or {}),
+                "salt": salt,
+                "kdf": "pbkdf2-hmac-sha256",
+                "iterations": actual_iterations,
+            },
             rotation_count=0,
         )
 
