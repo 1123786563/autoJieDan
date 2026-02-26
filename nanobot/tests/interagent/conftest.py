@@ -1,12 +1,12 @@
 """
 conftest.py for interagent tests
+
+Note: pytest-asyncio is configured in pyproject.toml with asyncio_mode = "auto"
+Do not define pytest_plugins in non-top-level conftest.py files.
 """
 
 import pytest
 import asyncio
-
-# 配置 pytest-asyncio
-pytest_plugins = ('pytest_asyncio',)
 
 
 @pytest.fixture
