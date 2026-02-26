@@ -4,6 +4,11 @@
  * JSON-formatted structured logging with levels, context, and child loggers.
  * Uses process.stdout.write to avoid console.log recursion.
  * Never throws — all errors are handled gracefully.
+ *
+ * SECURITY: Redacts sensitive information from logs:
+ * - File paths containing wallet, .env, keys, secrets
+ * - API keys and tokens in common formats
+ * - Private keys and cryptographic secrets
  */
 
 import type { LogLevel, LogEntry } from "../types.js";
@@ -11,6 +16,47 @@ import { LOG_LEVEL_PRIORITY } from "../types.js";
 
 let globalLogLevel: LogLevel = "info";
 let customSink: ((entry: LogEntry) => void) | null = null;
+
+// ============================================================================
+// Sensitive Data Redaction
+// ============================================================================
+
+// Patterns that indicate sensitive information
+const SENSITIVE_PATTERNS: { pattern: RegExp; replacement: string }[] = [
+  // API keys and tokens (various formats)
+  { pattern: /sk-[a-zA-Z0-9]{20,}/g, replacement: "sk-***REDACTED***" },
+  { pattern: /sk-ant-[a-zA-Z0-9-]{20,}/g, replacement: "sk-ant-***REDACTED***" },
+  { pattern: /Bearer\s+[a-zA-Z0-9_-]{20,}/gi, replacement: "Bearer ***REDACTED***" },
+  { pattern: /xox[baprs]-[a-zA-Z0-9-]{10,}/g, replacement: "xox-***REDACTED***" },
+  { pattern: /[0-9]{10,}:[a-zA-Z0-9_-]{30,}/g, replacement: "***REDACTED_TOKEN***" }, // Telegram
+  // Private keys
+  { pattern: /0x[a-fA-F0-9]{64}/g, replacement: "0x***REDACTED***" },
+  { pattern: /-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----[\s\S]*?-----END/g, replacement: "***PRIVATE_KEY_REDACTED***" },
+  // Sensitive file paths
+  { pattern: /\/[^"\s]*wallet\.json/gi, replacement: "/***REDACTED***/wallet.json" },
+  { pattern: /\/[^"\s]*\.env[_\w]*/gi, replacement: "/***REDACTED***/.env" },
+  { pattern: /\/[^"\s]*\.ssh\/[^"\s]+/gi, replacement: "/***REDACTED***/.ssh/***" },
+  { pattern: /\/[^"\s]*\.gnupg\/[^"\s]+/gi, replacement: "/***REDACTED***/.gnupg/***" },
+  { pattern: /\/[^"\s]*secrets?\/[^"\s]+/gi, replacement: "/***REDACTED***/secrets/***" },
+  { pattern: /\/[^"\s]*\.automaton\/[^"\s]*(?:wallet|key|secret)/gi, replacement: "/***REDACTED***/.automaton/***" },
+  // Connection strings with passwords
+  { pattern: /(?:mysql|postgres|mongodb|redis):\/\/[^:]+:[^@]+@/g, replacement: "***CONNECTION_STRING_REDACTED***" },
+  // Environment variable assignments with secrets
+  { pattern: /(?:API_KEY|SECRET|PASSWORD|TOKEN|PRIVATE_KEY)\s*=\s*[^\s]+/gi, replacement: "***=***REDACTED***" },
+];
+
+/**
+ * Redact sensitive information from a string.
+ * Used to sanitize log messages, error messages, and stack traces.
+ */
+function redactSensitive(text: string): string {
+  if (!text) return text;
+  let result = text;
+  for (const { pattern, replacement } of SENSITIVE_PATTERNS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
 
 export function setGlobalLogLevel(level: LogLevel): void {
   globalLogLevel = level;
@@ -73,21 +119,24 @@ export class StructuredLogger {
         return;
       }
 
+      // SECURITY: Redact sensitive information from all log output
       const entry: LogEntry = {
         timestamp: new Date().toISOString(),
         level,
         module: this.module,
-        message,
+        message: redactSensitive(message),
       };
 
       if (context && Object.keys(context).length > 0) {
-        entry.context = context;
+        // Redact sensitive data in context object
+        entry.context = this.redactContext(context);
       }
 
       if (error) {
         entry.error = {
-          message: error.message,
-          stack: error.stack,
+          message: redactSensitive(error.message),
+          // SECURITY: Redact sensitive paths from stack traces
+          stack: error.stack ? redactSensitive(error.stack) : undefined,
         };
         if ((error as any).code) {
           entry.error.code = (error as any).code;
@@ -104,11 +153,41 @@ export class StructuredLogger {
     } catch {
       // Fallback if JSON serialization fails
       try {
-        process.stderr.write(`[logger-fallback] ${message}\n`);
+        process.stderr.write(`[logger-fallback] ${redactSensitive(message)}\n`);
       } catch {
         // Completely silent — never throw from logger
       }
     }
+  }
+
+  /**
+   * Recursively redact sensitive values in context objects.
+   */
+  private redactContext(obj: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      const lowerKey = key.toLowerCase();
+      // Check if key name indicates sensitive data
+      if (
+        lowerKey.includes("secret") ||
+        lowerKey.includes("password") ||
+        lowerKey.includes("token") ||
+        lowerKey.includes("apikey") ||
+        lowerKey.includes("api_key") ||
+        lowerKey.includes("privatekey") ||
+        lowerKey.includes("private_key") ||
+        lowerKey.includes("credential")
+      ) {
+        result[key] = "***REDACTED***";
+      } else if (typeof value === "string") {
+        result[key] = redactSensitive(value);
+      } else if (typeof value === "object" && value !== null) {
+        result[key] = this.redactContext(value as Record<string, unknown>);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
   }
 }
 
