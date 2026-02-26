@@ -2,7 +2,7 @@
 # Multi-stage build for optimized production image
 
 # Stage 1: Build
-FROM node:20-bookworm-slim AS builder
+FROM node:25-bookworm-slim AS builder
 
 # Install build dependencies for better-sqlite3
 RUN apt-get update && \
@@ -27,7 +27,7 @@ COPY . .
 RUN pnpm build
 
 # Stage 2: Production
-FROM node:20-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 
 # Install runtime dependencies
 RUN apt-get update && \
