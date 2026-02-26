@@ -1,0 +1,14 @@
+# Logstash Settings
+# Version: 1.0.0
+
+http.host: "0.0.0.0"
+path.config: /usr/share/logstash/pipeline
+path.logs: /usr/share/logstash/logs
+
+# Performance settings
+pipeline.workers: 2
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+
+# Monitoring
+monitoring.enabled: false

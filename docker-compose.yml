@@ -194,6 +194,104 @@ services:
     profiles:
       - monitoring
 
+  # ============================================================================
+  # Elasticsearch - Log Storage
+  # ============================================================================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    hostname: elasticsearch
+    restart: unless-stopped
+
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    networks:
+      - interagent-net
+
+    profiles:
+      - logging
+
+  # ============================================================================
+  # Logstash - Log Processing
+  # ============================================================================
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: logstash
+    hostname: logstash
+    restart: unless-stopped
+
+    ports:
+      - "${LOGSTASH_TCP_PORT:-5000}:5000/tcp"
+
+    volumes:
+      - ./deploy/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./deploy/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600/_node/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    networks:
+      - interagent-net
+
+    profiles:
+      - logging
+
+  # ============================================================================
+  # Kibana - Log Visualization
+  # ============================================================================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana
+    hostname: kibana
+    restart: unless-stopped
+
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_SECURITY_ENABLED=false
+
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+    networks:
+      - interagent-net
+
+    profiles:
+      - logging
+
 # ============================================================================
 # Networks
 # ============================================================================
@@ -227,4 +325,8 @@ volumes:
 
   grafana-data:
     name: grafana-data
+    driver: local
+
+  elasticsearch-data:
+    name: elasticsearch-data
     driver: local
