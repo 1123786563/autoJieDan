@@ -1,8 +1,0 @@
-{
-  "active": true,
-  "started_at": "2026-02-25T15:31:56.456Z",
-  "original_prompt": " Autopilot: /Users/yongjunwu/trea/autoJieDan/.omc/autopilot/anp-communication-design.md /Users/yongjunwu/trea/autoJieDan/.omc/autopilot/implementation-plan.md /Users/yongjunwu/trea/autoJieDan/.omc/autopilot/README.md /Users/yongjunwu/trea/autoJieDan/.omc/autopilot/requirements-analysis.md /Users/yongjunwu/trea/autoJieDan/.omc/autopilot/technical-design.md  根据文档帮我编写开发计划和开发内容，需要详细到每一天的任务，包括其中的技术点，风险点以及解决方法",
-  "session_id": "7f4e5001-1ef3-463b-8966-4f6c5efc7388",
-  "reinforcement_count": 0,
-  "last_checked_at": "2026-02-25T15:31:56.457Z"
-}

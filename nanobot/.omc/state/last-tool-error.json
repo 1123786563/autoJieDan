@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd /Users/yongjunwu/trea/autoJieDan && git add automaton/src/__tests__/interagent/e2e-integration.test.ts nanobot/tests/interagent/test_e2e_integration.py && git status\",\"description\":\"添加 ...",
-  "error": "Exit code 1\n下列路径根据您的一个 .gitignore 文件而被忽略：\nnanobot/tests\n提示： 如果您确实想添加它们，请使用 -f 选项。\n提示： Disable this message with \"git config set advice.addIgnoredFile false\"\n\n下列路径根据您的一个 .gitignore 文件而被忽略：\nnanobot/tests\n提示： 如果您确实想添加它们，请使用 -f 选项。\n提示： Disable this message with \"git config set advice.addIgnoredFile false\"",
-  "timestamp": "2026-02-26T06:39:34.309Z",
-  "retry_count": 1
-}
