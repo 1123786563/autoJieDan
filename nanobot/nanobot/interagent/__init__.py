@@ -60,6 +60,26 @@ from .lease import (
     is_expiring_soon,
 )
 
+from .progress import (
+    Milestone,
+    MilestoneStatus,
+    ProgressTracker,
+    ProgressSnapshot,
+    format_progress,
+    create_progress_bar,
+    estimate_completion_time,
+)
+
+from .reporter import (
+    ProgressReporter,
+    ProgressReport,
+    ProgressListener,
+    ReporterConfig,
+    ReporterStats,
+    create_summary_report,
+    format_report_message,
+)
+
 __all__ = [
     # WebSocket
     "InteragentWebSocketClient",
@@ -105,4 +125,20 @@ __all__ = [
     "LeaseContext",
     "format_remaining_time",
     "is_expiring_soon",
+    # Progress
+    "Milestone",
+    "MilestoneStatus",
+    "ProgressTracker",
+    "ProgressSnapshot",
+    "format_progress",
+    "create_progress_bar",
+    "estimate_completion_time",
+    # Reporter
+    "ProgressReporter",
+    "ProgressReport",
+    "ProgressListener",
+    "ReporterConfig",
+    "ReporterStats",
+    "create_summary_report",
+    "format_report_message",
 ]
