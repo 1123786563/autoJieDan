@@ -28,7 +28,7 @@ scrape_configs:
   # Automaton metrics
   - job_name: 'automaton'
     static_configs:
-      - targets: ['automaton:18790']
+      - targets: ['automaton:10790']
     metrics_path: /metrics
     scrape_interval: 10s
     scrape_timeout: 5s
@@ -36,7 +36,7 @@ scrape_configs:
   # Nanobot metrics (if available)
   - job_name: 'nanobot'
     static_configs:
-      - targets: ['nanobot:18791']
+      - targets: ['nanobot:10791']
     metrics_path: /metrics
     scrape_interval: 10s
     scrape_timeout: 5s

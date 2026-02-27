@@ -131,7 +131,7 @@ class HealthCheckServer:
     """
 
     DEFAULT_CONFIG = {
-        "port": 18793,
+        "port": 10793,
         "host": "0.0.0.0",
         "nanobot_did": "did:anp:nanobot:main",
         "version": "1.0.0",
@@ -139,7 +139,7 @@ class HealthCheckServer:
 
     def __init__(
         self,
-        port: int = 18793,
+        port: int = 10793,
         host: str = "0.0.0.0",
         nanobot_did: str = "did:anp:nanobot:main",
         version: str = "1.0.0",

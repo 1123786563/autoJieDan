@@ -175,7 +175,7 @@ export class InteragentWebSocketServer extends EventEmitter {
 
   /** 默认配置 */
   private static readonly DEFAULT_CONFIG: Required<WebSocketServerConfig> = {
-    port: 18791,
+    port: 10791,
     heartbeatInterval: 30000, // 30 秒
     connectionTimeout: 60000, // 60 秒
     maxConnections: 10,

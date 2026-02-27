@@ -96,7 +96,7 @@ export class HealthCheckServer extends EventEmitter {
 
   /** 默认配置 */
   private static readonly DEFAULT_CONFIG: Required<HealthServerConfig> = {
-    port: 18793,
+    port: 10793,
     host: "0.0.0.0",
     automatonDid: "did:anp:automaton:main",
     version: "1.0.0",
