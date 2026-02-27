@@ -309,31 +309,6 @@ describe("orchestration/Orchestrator", () => {
       // The failed phase now resets to idle so the orchestrator can pick up other active goals
       expect(result.phase).toBe("idle");
     });
-      const goalId = insertGoal(db, { status: "active" });
-      setOrchestratorState(db, {
-        phase: "failed",
-        goalId,
-        replanCount: 3,
-        failedTaskId: null,
-        failedError: "Something went wrong",
-      });
-      const orc = makeOrchestrator(db);
-      const result = await orc.tick();
-      // The failed phase now resets to idle so the orchestrator can pick up other active goals
-      expect(result.phase).toBe("idle");
-    });
-      const goalId = insertGoal(db, { status: "active" });
-      setOrchestratorState(db, {
-        phase: "failed",
-        goalId,
-        replanCount: 3,
-        failedTaskId: null,
-        failedError: "Something went wrong",
-      });
-      const orc = makeOrchestrator(db);
-      const result = await orc.tick();
-      expect(result.phase).toBe("failed");
-    });
   });
 
   // ─── matchTaskToAgent ────────────────────────────────────────
@@ -429,23 +404,7 @@ describe("orchestration/Orchestrator", () => {
       expect(result.spawned).toBe(false);
     });
 
-    PB|    it("falls back to parent agent when no child agents available", async () => {
-TK|      const goalId = insertGoal(db);
-QB|      const agentTracker = makeAgentTracker({
-ZM|        getIdle: vi.fn().mockReturnValue([]),
-YM|        getBestForTask: vi.fn().mockReturnValue(null),
-SZ|      });
-SJ|      const orc = makeOrchestrator(db, {
-XM|        agentTracker,
-PR|        config: { disableSpawn: true },
-      });
-      // When no child agents are available and spawn is disabled,
-      // the orchestrator falls back to self-assignment (parent agent)
-      const result = await orc.matchTaskToAgent(makeTask(goalId));
-      expect(result.agentAddress).toBe("0x1234"); // Parent agent address from IDENTITY
-      expect(result.agentName).toBe("test");
-      expect(result.spawned).toBe(false);
-PB|    });
+    it("falls back to parent agent when no child agents available", async () => {
       const goalId = insertGoal(db);
       const agentTracker = makeAgentTracker({
         getIdle: vi.fn().mockReturnValue([]),
@@ -455,7 +414,12 @@ PB|    });
         agentTracker,
         config: { disableSpawn: true },
       });
-      await expect(orc.matchTaskToAgent(makeTask(goalId))).rejects.toThrow("No available agent");
+      // When no child agents are available and spawn is disabled,
+      // the orchestrator falls back to self-assignment (parent agent)
+      const result = await orc.matchTaskToAgent(makeTask(goalId));
+      expect(result.agentAddress).toBe("0x1234"); // Parent agent address from IDENTITY
+      expect(result.agentName).toBe("test");
+      expect(result.spawned).toBe(false);
     });
   });
 
