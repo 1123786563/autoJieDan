@@ -165,6 +165,47 @@ class QQConfig(Base):
     allow_from: list[str] = Field(default_factory=list)  # Allowed user openids (empty = public access)
 
 
+class UpworkRSSConfig(Base):
+    """Upwork RSS feed configuration."""
+
+    feed_urls: list[str] = Field(default_factory=list)
+    poll_interval_seconds: int = 300  # 5 minutes
+    max_projects_per_poll: int = 50
+
+
+class UpworkAPIConfig(Base):
+    """Upwork API configuration."""
+
+    client_id: str = ""
+    client_secret: str = ""
+    access_token: str = ""
+    refresh_token: str = ""
+    token_expires_at: str | None = None  # ISO datetime string
+
+
+class UpworkBiddingConfig(Base):
+    """Bidding strategy configuration."""
+
+    auto_bid_enabled: bool = False
+    max_bids_per_day: int = 20
+    min_budget_usd: float = 100.0
+    max_budget_usd: float = 10000.0
+    skill_keywords: list[str] = Field(default_factory=list)
+    excluded_keywords: list[str] = Field(default_factory=list)
+    preferred_categories: list[str] = Field(default_factory=list)
+    hourly_rate_usd: float = 50.0
+
+
+class UpworkConfig(Base):
+    """Upwork channel configuration."""
+
+    enabled: bool = False
+    rss: UpworkRSSConfig = Field(default_factory=UpworkRSSConfig)
+    api: UpworkAPIConfig = Field(default_factory=UpworkAPIConfig)
+    bidding: UpworkBiddingConfig = Field(default_factory=UpworkBiddingConfig)
+    allow_from: list[str] = Field(default_factory=list)
+
+
 class ChannelsConfig(Base):
     """Configuration for chat channels."""
 
@@ -179,6 +220,7 @@ class ChannelsConfig(Base):
     email: EmailConfig = Field(default_factory=EmailConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
     qq: QQConfig = Field(default_factory=QQConfig)
+    upwork: UpworkConfig = Field(default_factory=UpworkConfig)
 
 
 class AgentDefaults(Base):

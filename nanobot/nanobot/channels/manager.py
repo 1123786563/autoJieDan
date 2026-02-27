@@ -136,6 +136,18 @@ class ChannelManager:
                 logger.info("QQ channel enabled")
             except ImportError as e:
                 logger.warning("QQ channel not available: {}", e)
+
+        # Upwork channel
+        if self.config.channels.upwork.enabled:
+            try:
+                from nanobot.channels.upwork import UpworkChannel
+                self.channels["upwork"] = UpworkChannel(
+                    self.config.channels.upwork,
+                    self.bus,
+                )
+                logger.info("Upwork channel enabled")
+            except ImportError as e:
+                logger.warning("Upwork channel not available: {}", e)
     
     async def _start_channel(self, name: str, channel: BaseChannel) -> None:
         """Start a channel and log any exceptions."""
