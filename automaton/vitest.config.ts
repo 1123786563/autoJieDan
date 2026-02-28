@@ -3,6 +3,19 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     testTimeout: 30_000,
+    hookTimeout: 30_000,
+    teardownTimeout: 30_000,
+    pool: "threads",
+    poolOptions: {
+      threads: {
+        singleThread: false,
+        minThreads: 1,
+        maxThreads: 4,
+      },
+    },
+    sequence: {
+      hooks: "stack",
+    },
     include: [
       "src/__tests__/**/*.test.ts",
       "tests/**/*.test.ts",
