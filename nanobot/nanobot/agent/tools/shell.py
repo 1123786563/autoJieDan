@@ -102,6 +102,15 @@ ALWAYS_BLOCKED_PATTERNS = [
     r"\\x[0-9a-fA-F]{2}",                # hex encoded
     r"\\[0-7]{3}",                       # octal encoded
     r"base64\s+-d",                      # base64 decode
+
+    # Shell operators - BLOCK these entirely rather than falling back to shell mode
+    # This prevents shell injection attacks via the create_subprocess_shell fallback
+    r"\s*\|\s*",                         # pipe operator (blocks command chaining)
+    r"&&",                               # AND operator
+    r"\|\|",                             # OR operator
+    r";\s*\S",                           # semicolon followed by another command
+    r">\s*[^&]",                         # output redirect (not >>)
+    r"^\s*&\s*$",                        # background process (& alone)
 ]
 
 
@@ -215,12 +224,12 @@ class ExecTool(Tool):
                     cwd=cwd,
                 )
             else:
-                # Fall back to shell for complex commands (pipes, redirects, etc.)
-                process = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=cwd,
+                # SECURITY: Shell operators detected - block command entirely
+                # rather than falling back to shell mode which enables injection
+                logger.warning(f"ExecTool blocked shell mode attempt: {command[:100]}...")
+                return (
+                    "Error: Shell operators (|, &&, ||, ;, >, <, &) are not allowed. "
+                    "Execute simple commands only. Shell mode is disabled for security."
                 )
 
             try:

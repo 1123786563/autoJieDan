@@ -1,6 +1,8 @@
 """Configuration loading utilities."""
 
 import json
+import os
+import sys
 from pathlib import Path
 
 from nanobot.config.schema import Config
@@ -15,6 +17,55 @@ def get_data_dir() -> Path:
     """Get the nanobot data directory."""
     from nanobot.utils.helpers import get_data_path
     return get_data_path()
+
+
+def validate_required_secrets() -> None:
+    """
+    Validate that required secrets are set via environment variables.
+
+    Fails fast with clear error messages if secrets are missing or contain
+    placeholder values.
+
+    Security: This prevents accidental deployment with default/placeholder credentials.
+    """
+    required_secrets = {
+        "INTERAGENT_SECRET": "Interagent communication secret (required for Automaton-Nanobot integration)",
+    }
+
+    # Only validate if INTERAGENT_SECRET is expected (check if automaton integration is enabled)
+    interagent_enabled = os.environ.get("INTERAGENT_ENABLED", "").lower() == "true"
+
+    for secret_name, description in required_secrets.items():
+        value = os.environ.get(secret_name)
+
+        # Check if secret is missing
+        if not value:
+            # Skip validation if interagent is not enabled and this is the interagent secret
+            if secret_name == "INTERAGENT_SECRET" and not interagent_enabled:
+                continue
+            print("ERROR: " + secret_name + " is not set")
+            print("  Description: " + description)
+            print("  Generate with: openssl rand -hex 32")
+            print("  Set via: export " + secret_name + "=$(openssl rand -hex 32)")
+            sys.exit(1)
+
+        # Check for placeholder values
+        placeholder_patterns = [
+            "sk-your-",
+            "<GENERATE_WITH:",
+            "your-",
+            "xxx",
+            "CHANGEME",
+            "REPLACE_ME",
+        ]
+
+        if any(pattern in value.upper() for pattern in placeholder_patterns):
+            print("ERROR: " + secret_name + " contains a placeholder value")
+            print("  Current value: " + value[:20] + "...")
+            print("  Description: " + description)
+            print("  Generate with: openssl rand -hex 32")
+            print("  Set via: export " + secret_name + "=$(openssl rand -hex 32)")
+            sys.exit(1)
 
 
 def load_config(config_path: Path | None = None) -> Config:

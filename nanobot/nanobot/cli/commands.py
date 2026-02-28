@@ -278,7 +278,7 @@ def gateway(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Start the nanobot gateway."""
-    from nanobot.config.loader import load_config, get_data_dir
+    from nanobot.config.loader import load_config, get_data_dir, validate_required_secrets
     from nanobot.bus.queue import MessageBus
     from nanobot.agent.loop import AgentLoop
     from nanobot.channels.manager import ChannelManager
@@ -286,13 +286,16 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
-    
+
     if verbose:
         import logging
         logging.basicConfig(level=logging.DEBUG)
-    
+
+    # Validate required secrets before starting
+    validate_required_secrets()
+
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
-    
+
     config = load_config()
     bus = MessageBus()
     provider = _make_provider(config)
@@ -441,12 +444,15 @@ def agent(
     logs: bool = typer.Option(False, "--logs/--no-logs", help="Show nanobot runtime logs during chat"),
 ):
     """Interact with the agent directly."""
-    from nanobot.config.loader import load_config, get_data_dir
+    from nanobot.config.loader import load_config, get_data_dir, validate_required_secrets
     from nanobot.bus.queue import MessageBus
     from nanobot.agent.loop import AgentLoop
     from nanobot.cron.service import CronService
     from loguru import logger
-    
+
+    # Validate required secrets before starting
+    validate_required_secrets()
+
     config = load_config()
     
     bus = MessageBus()

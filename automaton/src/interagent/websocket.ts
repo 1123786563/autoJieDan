@@ -526,6 +526,15 @@ export class WebSocketConnectionPool extends EventEmitter {
       throw new Error("Connection pool is shut down");
     }
 
+    // SECURITY: Enforce TLS for non-localhost connections
+    // This prevents man-in-the-middle attacks on interagent communication
+    if (!isLocalhostUrl(url) && !url.startsWith("wss://")) {
+      throw new Error(
+        `Insecure WebSocket connection blocked. Use wss:// for remote connections. ` +
+        `Received: ${url.slice(0, 50)}...`
+      );
+    }
+
     // 检查是否已有可用连接
     const existing = this.connections.get(url);
     if (existing && existing.state === "connected" && existing.ws.readyState === WebSocket.OPEN) {
@@ -835,6 +844,31 @@ export class WebSocketConnectionPool extends EventEmitter {
 // ============================================================================
 // 工具函数
 // ============================================================================
+
+/**
+ * Check if a URL is a localhost address (allowed to use non-TLS)
+ */
+function isLocalhostUrl(url: string): boolean {
+  try {
+    // Handle WebSocket URLs
+    const httpUrl = url.replace(/^ws:/, "http:").replace(/^wss:/, "https:");
+    const urlObj = new URL(httpUrl);
+    const hostname = urlObj.hostname.toLowerCase();
+
+    // Allow localhost, 127.x.x.x, and ::1
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname.startsWith("127.") ||
+      hostname === "[::1]"
+    );
+  } catch {
+    // If URL parsing fails, do a simple string check
+    const lower = url.toLowerCase();
+    return lower.includes("localhost") || lower.includes("127.0.0.1");
+  }
+}
 
 /**
  * 创建事件基础结构

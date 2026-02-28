@@ -54,20 +54,26 @@ dev = [
 browser = [
     "playwright>=1.40.0,<2.0.0",
 ]
-
 # Security constraints for indirect dependencies with known CVEs
 # Run `pip-audit` to verify no known vulnerabilities
-[project.optional-dependencies.security-constraints]
-# These are version floor constraints for indirect dependencies
-# They ensure vulnerable versions are not installed
-urllib3 = ">=2.6.3"          # CVE-2025-50182, CVE-2025-50181, CVE-2025-66418, CVE-2025-66471
-transformers = ">=4.53.0"    # CVE-2025-3262, CVE-2025-3263, CVE-2025-3264, CVE-2025-3777
-torch = ">=2.8.0"            # CVE-2025-2953, CVE-2025-3730
-python-jose = ">=3.4.0"      # PYSEC-2024-232, PYSEC-2024-233
-setuptools = ">=78.1.1"      # PYSEC-2025-49
-pyasn1 = ">=0.6.2"           # CVE-2026-23490
-weasyprint = ">=68.0"        # CVE-2025-68616
-wheel = ">=0.46.2"           # CVE-2026-24049
+security-constraints = [
+    "urllib3>=2.6.3",          # CVE-2025-50182, CVE-2025-50181, CVE-2025-66418, CVE-2025-66471
+    "transformers>=4.53.0",    # CVE-2025-3262, CVE-2025-3263, CVE-2025-3264, CVE-2025-3777
+    # Note: torch CVE-2025-2953, CVE-2025-3730 - latest version 2.2.2 has partial fixes
+    "python-jose>=3.4.0",      # PYSEC-2024-232, PYSEC-2024-233
+    "setuptools>=78.1.1",      # PYSEC-2025-49
+    "pyasn1>=0.6.2",           # CVE-2026-23490
+    "weasyprint>=68.0",        # CVE-2025-68616
+    "wheel>=0.46.2",           # CVE-2026-24049
+    # Fixed vulnerabilities
+    "text-generation>=3.3.7",  # CVE-2024-3924, CVE-2026-0599 (was 0.7.0)
+    # Packages with no fixed version available (monitor for updates):
+    # - torch 2.2.2: CVE-2025-2953, CVE-2025-3730, CVE-2025-2953 (latest version affected)
+    # - ecdsa 0.19.1: CVE-2024-23342 (latest version affected)
+    # - diskcache 5.6.3: CVE-2025-69872 (no fix available)
+    # - biopython 1.86: CVE-2025-68463 (no fix available)
+    # - py 1.11.0: PYSEC-2022-42969 (latest version has the fix, verify installation)
+]
 
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"

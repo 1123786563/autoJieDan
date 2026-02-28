@@ -83,6 +83,8 @@ DANGEROUS_PATTERNS = [
     r"\bWebSocket\b",
     r"\bEventSource\b",
     r"\b\.open\s*\([^)]*,\s*['\"]https?://",  # XHR open with URL
+    r"\bRequest\s*\(",  # Fetch API Request
+    r"\bWebSocket\s*\(",  # WebSocket connections
 
     # Storage access - credential/data theft
     r"\blocalStorage\b",
@@ -97,17 +99,28 @@ DANGEROUS_PATTERNS = [
     r"\bsetInterval\s*\(\s*['\"]",  # setInterval with string
     r"\bnew\s+Function\b",
 
-    # Script injection
+    # Script injection / XSS
     r"\.innerHTML\s*=",
+    r"\['innerHTML'\]\s*=",  # Bracket notation bypass
+    r'\["innerHTML"\]\s*=',  # Double quote bracket notation
     r"\.outerHTML\s*=",
     r"\.insertAdjacentHTML\b",
+    r"\.insertAdjacentText\b",  # Could be used for XSS
     r"document\.write\b",
     r"document\.writeln\b",
+    r"\.createContextualFragment\b",  # Range createContextualFragment
+    r"document\.createContextualFragment\b",
+
+    # DOM manipulation that could enable XSS
+    r"\.setAttribute\s*\([^)]*on\w+",  # Setting event handlers
+    r"\.getAttribute\s*\([^)]*on\w+",  # Reading event handlers
 
     # Navigation/redirect
     r"\.location\s*=",
     r"window\.open\s*\(",
     r"document\.location\b",
+    r"window\.location\.replace\b",
+    r"window\.location\.assign\b",
 
     # Form submission
     r"\.submit\s*\(",
@@ -115,6 +128,7 @@ DANGEROUS_PATTERNS = [
 
     # Event handler assignment (potential XSS)
     r"\.on\w+\s*=",  # onclick=, onload=, etc.
+    r"\.addEventListener\s*\([^)]*on\w+",  # addEventListener with event type
 
     # Web APIs that could be abused
     r"\bNavigator\.sendBeacon\b",
@@ -137,6 +151,39 @@ DANGEROUS_PATTERNS = [
     # Potential encoding/obfuscation for bypass
     r"\batob\s*\(",
     r"\bbtoa\s*\(",
+    r"\bunescape\s*\(",
+    r"\bdecodeURI\s*\(",
+    r"\bdecodeURIComponent\s*\(",
+
+    # Shadow DOM (could hide malicious content)
+    r"\.attachShadow\b",
+    r"\.shadowRoot\b",
+
+    # Web Audio / Media (potential fingerprinting)
+    r"\bAudioContext\b",
+    r"\bOfflineAudioContext\b",
+    r"\bMediaRecorder\b",
+
+    # Canvas (potential fingerprinting)
+    r"\.toDataURL\b",
+    r"\.toBlob\b",
+    r"\.getImageData\b",
+
+    # Performance timing (fingerprinting)
+    r"\bperformance\.now\b",
+    r"\bPerformanceObserver\b",
+
+    # Payment Request API
+    r"\bPaymentRequest\b",
+
+    # Credentials API
+    r"\bnavigator\.credentials\b",
+    r"\bCredentialsContainer\b",
+
+    # Web USB / Bluetooth / Serial (hardware access)
+    r"\bnavigator\.usb\b",
+    r"\bnavigator\.bluetooth\b",
+    r"\bnavigator\.serial\b",
 ]
 
 # Maximum script length to prevent DoS
@@ -301,7 +348,7 @@ class BrowserEvaluateTool(Tool):
 
             serialized = self._serialize_result(result)
 
-            logger.info(f"BrowserEvaluate script completed successfully")
+            logger.info("BrowserEvaluate script completed successfully")
             return json.dumps({
                 "success": True,
                 "result": serialized,

@@ -42,7 +42,18 @@ const SENSITIVE_PATTERNS: { pattern: RegExp; replacement: string }[] = [
   // Connection strings with passwords
   { pattern: /(?:mysql|postgres|mongodb|redis):\/\/[^:]+:[^@]+@/g, replacement: "***CONNECTION_STRING_REDACTED***" },
   // Environment variable assignments with secrets
-  { pattern: /(?:API_KEY|SECRET|PASSWORD|TOKEN|PRIVATE_KEY)\s*=\s*[^\s]+/gi, replacement: "***=***REDACTED***" },
+  { pattern: /(?:API_KEY|SECRET|PASSWORD|TOKEN|PRIVATE_KEY|CREDENTIAL)\s*=\s*[^\s]+/gi, replacement: "***=***REDACTED***" },
+  // Additional API key formats
+  { pattern: /AIza[a-zA-Z0-9_-]{35}/g, replacement: "***REDACTED_GOOGLE_KEY***" }, // Google API
+  { pattern: /gh[pousr]_[a-zA-Z0-9]{36,}/g, replacement: "***REDACTED_GITHUB_TOKEN***" }, // GitHub
+  { pattern: /glpat-[a-zA-Z0-9-]{20,}/g, replacement: "***REDACTED_GITLAB_TOKEN***" }, // GitLab
+  { pattern: /dckr_pat_[a-zA-Z0-9_-]{20,}/g, replacement: "***REDACTED_DOCKER_TOKEN***" }, // Docker
+  // Long tokens (catch-all for unknown formats)
+  { pattern: /(?<![a-zA-Z0-9])[a-zA-Z0-9]{40,}(?![a-zA-Z0-9])/g, replacement: "***REDACTED_LONG_TOKEN***" },
+  // Basic auth headers
+  { pattern: /Basic\s+[A-Za-z0-9+/=]{20,}/g, replacement: "Basic ***REDACTED***" },
+  // Base64 encoded data (potential secrets)
+  { pattern: /\b[A-Za-z0-9+/]{50,}={0,2}\b/g, replacement: "***REDACTED_BASE64***" },
 ];
 
 /**
