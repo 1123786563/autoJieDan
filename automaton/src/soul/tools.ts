@@ -18,6 +18,24 @@ import { ulid } from "ulid";
 import { createLogger } from "../observability/logger.js";
 const logger = createLogger("soul");
 
+/**
+ * Validate that a file path is within an allowed directory.
+ * Prevents path traversal attacks.
+ */
+function validatePathWithinDir(filePath: string, allowedDir: string): void {
+  const resolved = path.resolve(filePath);
+  const resolvedAllowed = path.resolve(allowedDir);
+  const allowedWithSep = resolvedAllowed.endsWith(path.sep)
+    ? resolvedAllowed
+    : `${resolvedAllowed}${path.sep}`;
+
+  if (resolved !== resolvedAllowed && !resolved.startsWith(allowedWithSep)) {
+    throw new Error(
+      `Security: Path "${filePath}" is outside allowed directory "${allowedDir}"`,
+    );
+  }
+}
+
 // ─── Update Soul ────────────────────────────────────────────────
 
 export interface UpdateSoulResult {
@@ -84,6 +102,9 @@ export async function updateSoul(
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+    // Validate path is within allowed directory (prevents path traversal)
+    const allowedDir = path.join(home, ".automaton");
+    validatePathWithinDir(resolvedPath, allowedDir);
     fs.writeFileSync(resolvedPath, content, "utf-8");
 
     // Get previous version ID

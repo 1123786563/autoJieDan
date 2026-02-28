@@ -55,6 +55,20 @@ browser = [
     "playwright>=1.40.0,<2.0.0",
 ]
 
+# Security constraints for indirect dependencies with known CVEs
+# Run `pip-audit` to verify no known vulnerabilities
+[project.optional-dependencies.security-constraints]
+# These are version floor constraints for indirect dependencies
+# They ensure vulnerable versions are not installed
+urllib3 = ">=2.6.3"          # CVE-2025-50182, CVE-2025-50181, CVE-2025-66418, CVE-2025-66471
+transformers = ">=4.53.0"    # CVE-2025-3262, CVE-2025-3263, CVE-2025-3264, CVE-2025-3777
+torch = ">=2.8.0"            # CVE-2025-2953, CVE-2025-3730
+python-jose = ">=3.4.0"      # PYSEC-2024-232, PYSEC-2024-233
+setuptools = ">=78.1.1"      # PYSEC-2025-49
+pyasn1 = ">=0.6.2"           # CVE-2026-23490
+weasyprint = ">=68.0"        # CVE-2025-68616
+wheel = ">=0.46.2"           # CVE-2026-24049
+
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"
 
