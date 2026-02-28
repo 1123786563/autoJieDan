@@ -75,10 +75,17 @@ import { createLogger } from "../observability/logger.js";
 const logger = createLogger("database");
 
 export function createDatabase(dbPath: string): AutomatonDatabase {
-  // Ensure directory exists
+  // Ensure directory exists with restrictive permissions
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+
+  // SECURITY: Create database file with restrictive permissions (0o600: owner read/write only)
+  // This prevents other users from reading sensitive data
+  if (!fs.existsSync(dbPath)) {
+    const fd = fs.openSync(dbPath, "w", 0o600);
+    fs.closeSync(fd);
   }
 
   const db = new Database(dbPath);
@@ -1946,7 +1953,9 @@ export function proceduralGet(db: DatabaseType, name: string): ProceduralMemoryE
 
 export function proceduralRecordOutcome(db: DatabaseType, name: string, success: boolean): void {
   try {
-    const col = success ? "success_count" : "failure_count";
+    // SECURITY: Column name is selected from whitelist, not from user input
+    const ALLOWED_COLUMNS = ["success_count", "failure_count"] as const;
+    const col = success ? ALLOWED_COLUMNS[0] : ALLOWED_COLUMNS[1];
     db.prepare(`UPDATE procedural_memory SET ${col} = ${col} + 1, last_used_at = datetime('now'), updated_at = datetime('now') WHERE name = ?`).run(name);
   } catch (error) { logger.error("proceduralRecordOutcome failed", error instanceof Error ? error : undefined); }
 }

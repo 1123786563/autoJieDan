@@ -10,6 +10,64 @@
 import type { HttpClientConfig } from "../types.js";
 import { DEFAULT_HTTP_CLIENT_CONFIG } from "../types.js";
 
+/**
+ * SSRF protection: Blocked hosts that should never be accessed
+ */
+const BLOCKED_HOSTS = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "0:0:0:0:0:0:0:1",
+  "::1",
+  "169.254.169.254", // AWS/Azure/GCP metadata endpoint
+  "metadata.google.internal",
+  "metadata.azure.internal",
+]);
+
+/**
+ * Private IP ranges that should be blocked for SSRF protection
+ */
+const PRIVATE_IP_PATTERNS = [
+  /^10\./, // 10.0.0.0/8
+  /^172\.(1[6-9]|2[0-9]|3[01])\./, // 172.16.0.0/12
+  /^192\.168\./, // 192.168.0.0/16
+  /^169\.254\./, // Link-local 169.254.0.0/16
+  /^fc00:/i, // Unique local IPv6
+  /^fe80:/i, // Link-local IPv6
+];
+
+/**
+ * Validates a URL for SSRF protection
+ * @throws Error if URL points to blocked or private resource
+ */
+function validateUrlForSsrf(urlString: string): void {
+  let url: URL;
+  try {
+    url = new URL(urlString);
+  } catch {
+    throw new Error(`Invalid URL: ${urlString}`);
+  }
+
+  const hostname = url.hostname.toLowerCase();
+
+  // Check blocked hosts
+  if (BLOCKED_HOSTS.has(hostname)) {
+    throw new Error(`SSRF protection: blocked host ${hostname}`);
+  }
+
+  // Check private IP patterns
+  for (const pattern of PRIVATE_IP_PATTERNS) {
+    if (pattern.test(hostname)) {
+      throw new Error(`SSRF protection: private IP range ${hostname}`);
+    }
+  }
+
+  // Only allow http and https schemes
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`SSRF protection: disallowed protocol ${url.protocol}`);
+  }
+}
+
 export class CircuitOpenError extends Error {
   constructor(public readonly resetAt: number) {
     super(
@@ -36,6 +94,9 @@ export class ResilientHttpClient {
       retries?: number;
     },
   ): Promise<Response> {
+    // SECURITY: SSRF protection - validate URL before making request
+    validateUrlForSsrf(url);
+
     if (this.isCircuitOpen()) {
       throw new CircuitOpenError(this.circuitOpenUntil);
     }

@@ -146,32 +146,21 @@ class ExecTool(Tool):
         self.require_confirmation = require_confirmation
         self.confirmation_callback = confirmation_callback
 
-        # Deprecation warning for permissive mode
+        # SECURITY: Permissive mode is disabled for security reasons
         if mode == ExecMode.PERMISSIVE:
-            warnings.warn(
-                "PERMISSIVE mode is deprecated. "
-                "This exposes the system to arbitrary command execution. "
-                "Use RESTRICTIVE mode with explicit allow_patterns instead.",
-                DeprecationWarning
-            )
-            logger.warning(
-                "DEPRECATED: ExecMode.PERMISSIVE is deprecated and will be removed. "
-                "This mode exposes the system to arbitrary command execution. "
+            raise ValueError(
+                "PERMISSIVE mode has been DISABLED for security. "
+                "It exposed the system to arbitrary command execution. "
                 "Use RESTRICTIVE mode with explicit allow_patterns instead."
             )
 
         # Always blocked patterns (cannot be overridden)
         self.always_blocked = ALWAYS_BLOCKED_PATTERNS
 
-        # Mode-specific patterns
-        if mode == ExecMode.RESTRICTIVE:
-            # Restrictive: use allowlist (default to safe commands)
-            self.allow_patterns = allow_patterns if allow_patterns is not None else DEFAULT_SAFE_COMMANDS
-            self.deny_patterns = []  # Not used in restrictive mode
-        else:
-            # Permissive: use denylist (legacy behavior, not recommended)
-            self.deny_patterns = deny_patterns or []
-            self.allow_patterns = []  # Not used in permissive mode
+        # Mode-specific patterns (only RESTRICTIVE mode is allowed now)
+        # Restrictive: use allowlist (default to safe commands)
+        self.allow_patterns = allow_patterns if allow_patterns is not None else DEFAULT_SAFE_COMMANDS
+        self.deny_patterns = []  # Not used in restrictive mode
 
         self.restrict_to_workspace = restrict_to_workspace
 
@@ -181,11 +170,7 @@ class ExecTool(Tool):
 
     @property
     def description(self) -> str:
-        desc = "Execute a shell command and return its output. "
-        if self.mode == ExecMode.PERMISSIVE:
-            desc += "WARNING: PERMISSIVE mode is DEPRECATED. "
-        desc += f"Mode: {self.mode.value}. Use with caution."
-        return desc
+        return "Execute a shell command and return its output. Mode: restrictive. Use with caution."
 
     @property
     def parameters(self) -> dict[str, Any]:

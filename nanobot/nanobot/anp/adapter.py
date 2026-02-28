@@ -8,35 +8,33 @@ ANP 协议适配器
 
 import asyncio
 import hashlib
+import secrets
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional, Callable, Any
 from enum import Enum
-from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
 
+from .did import generate_key_pair, import_private_key, import_public_key
+from .signature import (
+    CreateMessageOptions,
+    create_anp_message,
+    verify_signature,
+)
 from .types import (
+    ANPAdapterConfig,
     ANPMessage,
     ANPMessageType,
-    NegotiatedProtocol,
-    ANPAdapterConfig,
-    ProtocolNegotiatePayload,
-    ProtocolAcceptPayload,
-    ProtocolRejectPayload,
     CapabilityQueryPayload,
     CapabilityResponsePayload,
-    AUTOMATON_DID,
+    NegotiatedProtocol,
+    ProtocolAcceptPayload,
+    ProtocolConstraints,
+    ProtocolNegotiatePayload,
+    ProtocolRejectPayload,
 )
-from .signature import (
-    sign_payload,
-    verify_signature,
-    create_anp_message,
-    CreateMessageOptions,
-)
-from .did import generate_key_pair, import_private_key, import_public_key
-
 
 # ============================================================================
 # 类型定义
@@ -177,10 +175,11 @@ class ANPAdapter:
             proposed_protocol=proposed_protocol,
             protocol_version=proposed_protocol,
             capabilities=[],
-            max_latency=5000,
-            encryption_required=self.config.encryption_required or True,
+            constraints=ProtocolConstraints(
+                max_latency=5000,
+                encryption_required=self.config.encryption_required or True,
+            ),
         )
-
         options = CreateMessageOptions(
             type=ANPMessageType.PROTOCOL_NEGOTIATE,
             target_did=target_did,
@@ -234,7 +233,7 @@ class ANPAdapter:
                 protocol_id=payload.proposed_protocol,
                 version=payload.protocol_version,
                 session_id=session_id,
-                encryption_enabled=payload.encryption_required,
+                encryption_enabled=payload.constraints.encryption_required,
                 negotiated_at=datetime.utcnow().isoformat(),
             )
 
@@ -370,10 +369,6 @@ class ANPAdapter:
         """广播自身能力"""
         capabilities = self._get_local_capabilities()
 
-        response_payload = CapabilityResponsePayload(
-            capabilities=capabilities,
-        )
-
         # 这里应该发送到所有已连接的对等点
         # 实际实现需要传输层支持
         await self._emit("broadcast-capabilities", capabilities)
@@ -404,9 +399,10 @@ class ANPAdapter:
             message: ANP 消息
         """
         # 验证消息
-        valid, error = verify_signature(message, self._public_key)
+        # 验证消息
+        valid = verify_signature(message, self._public_key)
         if not valid:
-            await self._emit("error", {"message": message, "error": error})
+            await self._emit("error", {"message": message, "error": "Invalid signature"})
             return
 
         # 根据消息类型路由到对应的处理器
@@ -495,9 +491,10 @@ class ANPAdapter:
         ]
 
     def _generate_session_id(self) -> str:
-        """生成会话 ID"""
+        """生成会话 ID - 使用 cryptographically secure random"""
         timestamp = int(time.time() * 1000)
-        random_bytes = hashlib.sha256(str(timestamp).encode()).hexdigest()[:16]
+        # SECURITY: Use secrets module for cryptographically secure random
+        random_bytes = secrets.token_hex(16)
         return f"session-{timestamp}-{random_bytes}"
 
     def get_active_protocol(self, peer_did: str) -> Optional[NegotiatedProtocol]:
