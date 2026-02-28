@@ -642,6 +642,27 @@ export class AccessControlManager extends EventEmitter {
   }
 
   /**
+   * Convert a wildcard pattern to a safe regex.
+   * - Escapes all regex special characters except *
+   * - Uses [^/]* instead of .* to prevent excessive backtracking
+   * - Limits pattern length to prevent abuse
+   */
+  private wildcardToRegex(pattern: string): RegExp {
+    // Limit pattern length to prevent abuse
+    const MAX_PATTERN_LENGTH = 256;
+    if (pattern.length > MAX_PATTERN_LENGTH) {
+      throw new Error(`Resource pattern exceeds maximum length of ${MAX_PATTERN_LENGTH}`);
+    }
+
+    // Escape all regex special characters except *
+    const escaped = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '[^/]*');  // * matches anything except path separator (more restrictive)
+
+    return new RegExp(`^${escaped}$`);
+  }
+
+  /**
    * 检查权限是否匹配请求
    */
   private matchesPermission(permission: Permission, request: AccessRequest): boolean {
@@ -655,12 +676,16 @@ export class AccessControlManager extends EventEmitter {
       return false;
     }
 
-    // 检查资源模式
+    // 检查资源模式 (with ReDoS protection)
     if (permission.resourcePattern) {
-      const regex = new RegExp(
-        "^" + permission.resourcePattern.replace(/\*/g, ".*") + "$"
-      );
-      if (!regex.test(request.resourceId)) {
+      try {
+        const regex = this.wildcardToRegex(permission.resourcePattern);
+        if (!regex.test(request.resourceId)) {
+          return false;
+        }
+      } catch (error) {
+        // Invalid pattern - deny by default
+        console.error('Invalid resource pattern:', permission.resourcePattern, error);
         return false;
       }
     }

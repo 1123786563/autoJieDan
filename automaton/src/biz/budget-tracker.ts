@@ -8,7 +8,7 @@
 import type {
   AutomatonDatabase,
   BudgetTransaction,
-  BudgetAlert as BizBudgetAlert,
+  BizBudgetAlert,
   BudgetReport,
   BudgetStatus,
 } from "../types.js";
@@ -28,9 +28,71 @@ export class BudgetTracker {
   }
 
   /**
+   * Validate transaction input.
+   * @throws Error if validation fails
+   */
+  private validateTransaction(transaction: Omit<BudgetTransaction, "id" | "timestamp">): void {
+    const { amount, type, projectId, category, description } = transaction;
+
+    // Validate amount
+    if (typeof amount !== 'number') {
+      throw new Error(`Invalid transaction amount type: expected number, got ${typeof amount}`);
+    }
+    if (!Number.isFinite(amount)) {
+      throw new Error(`Invalid transaction amount: value is not finite (NaN or Infinity)`);
+    }
+    if (amount < 0) {
+      throw new Error(`Invalid transaction amount: cannot be negative (${amount})`);
+    }
+    if (amount > Number.MAX_SAFE_INTEGER / 100) {
+      throw new Error(`Invalid transaction amount: exceeds maximum allowed value (${amount})`);
+    }
+
+    // Validate type
+    const validTypes = ['income', 'expense'] as const;
+    if (!validTypes.includes(type as any)) {
+      throw new Error(`Invalid transaction type: "${type}". Must be one of: ${validTypes.join(', ')}`);
+    }
+
+    // Validate projectId
+    if (!projectId || typeof projectId !== 'string') {
+      throw new Error('Invalid or missing projectId');
+    }
+    if (projectId.length > 256) {
+      throw new Error('projectId exceeds maximum length of 256 characters');
+    }
+    if (!/^[\w\-./]+$/.test(projectId)) {
+      throw new Error('projectId contains invalid characters (only alphanumeric, underscore, hyphen, dot, slash allowed)');
+    }
+
+    // Validate category if provided
+    if (category !== undefined) {
+      if (typeof category !== 'string') {
+        throw new Error(`Invalid category type: expected string, got ${typeof category}`);
+      }
+      if (category.length > 128) {
+        throw new Error('category exceeds maximum length of 128 characters');
+      }
+    }
+
+    // Validate description if provided
+    if (description !== undefined) {
+      if (typeof description !== 'string') {
+        throw new Error(`Invalid description type: expected string, got ${typeof description}`);
+      }
+      if (description.length > 1000) {
+        throw new Error('description exceeds maximum length of 1000 characters');
+      }
+    }
+  }
+
+  /**
    * Record a budget transaction (income or expense).
    */
   recordTransaction(transaction: Omit<BudgetTransaction, "id" | "timestamp">): BudgetTransaction {
+    // Validate all inputs before processing
+    this.validateTransaction(transaction);
+
     const newTransaction: BudgetTransaction = {
       id: this.generateId(),
       timestamp: new Date().toISOString(),
@@ -108,6 +170,17 @@ export class BudgetTracker {
    * Set or update budget for a project.
    */
   setBudget(projectId: string, totalBudget: number, currency: string = "USD"): void {
+    // Validate inputs
+    if (!projectId || typeof projectId !== 'string') {
+      throw new Error('Invalid or missing projectId');
+    }
+    if (typeof totalBudget !== 'number' || !Number.isFinite(totalBudget) || totalBudget < 0) {
+      throw new Error(`Invalid totalBudget: must be a non-negative finite number`);
+    }
+    if (typeof currency !== 'string' || currency.length !== 3) {
+      throw new Error(`Invalid currency: must be a 3-letter currency code`);
+    }
+
     const budgetData = {
       projectId,
       totalBudget: this.round(totalBudget),

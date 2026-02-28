@@ -16,6 +16,7 @@ import os
 import re
 import shlex
 import shutil
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
@@ -26,9 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 class ExecMode(str, Enum):
-    """Execution mode for the shell tool."""
+    """Execution mode for the shell tool.
+
+    SECURITY WARNING: PERMISSIVE mode is deprecated and will be removed in a future version.
+    It exposes the system to arbitrary command execution. Use RESTRICTIVE mode with
+    explicit allow_patterns instead.
+    """
     RESTRICTIVE = "restrictive"  # Default: deny all unless in allowlist
-    PERMISSIVE = "permissive"    # Legacy: allow all unless in denylist
+    PERMISSIVE = "permissive"    # DEPRECATED: allow all unless in denylist
 
 
 # Default allowlist for restrictive mode - safe, read-only commands
@@ -140,6 +146,20 @@ class ExecTool(Tool):
         self.require_confirmation = require_confirmation
         self.confirmation_callback = confirmation_callback
 
+        # Deprecation warning for permissive mode
+        if mode == ExecMode.PERMISSIVE:
+            warnings.warn(
+                "PERMISSIVE mode is deprecated. "
+                "This exposes the system to arbitrary command execution. "
+                "Use RESTRICTIVE mode with explicit allow_patterns instead.",
+                DeprecationWarning
+            )
+            logger.warning(
+                "DEPRECATED: ExecMode.PERMISSIVE is deprecated and will be removed. "
+                "This mode exposes the system to arbitrary command execution. "
+                "Use RESTRICTIVE mode with explicit allow_patterns instead."
+            )
+
         # Always blocked patterns (cannot be overridden)
         self.always_blocked = ALWAYS_BLOCKED_PATTERNS
 
@@ -161,10 +181,11 @@ class ExecTool(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Execute a shell command and return its output. "
-            f"Mode: {self.mode.value}. Use with caution."
-        )
+        desc = "Execute a shell command and return its output. "
+        if self.mode == ExecMode.PERMISSIVE:
+            desc += "WARNING: PERMISSIVE mode is DEPRECATED. "
+        desc += f"Mode: {self.mode.value}. Use with caution."
+        return desc
 
     @property
     def parameters(self) -> dict[str, Any]:

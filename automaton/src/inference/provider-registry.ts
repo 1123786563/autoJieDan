@@ -240,16 +240,23 @@ const DEFAULT_PROVIDERS: ProviderConfig[] = [
   },
 ];
 
+export interface SecureCredentials {
+  apiKey: string;
+  baseUrl?: string;
+}
+
 export class ProviderRegistry {
   private readonly providers: ProviderConfig[];
   private readonly tierDefaults: Record<ModelTier, TierDefault>;
   private readonly disablements = new Map<string, ProviderDisablement>();
   private readonly emergencyStopCredits: number;
+  private readonly credentials: Map<string, SecureCredentials> = new Map();
 
   constructor(
     providers: ProviderConfig[],
     tierDefaults: Record<ModelTier, TierDefault> = DEFAULT_TIER_DEFAULTS,
     emergencyStopCredits = DEFAULT_EMERGENCY_STOP_CREDITS,
+    credentials?: Record<string, SecureCredentials>,
   ) {
     this.providers = providers
       .map((provider) => deepCloneProvider(provider))
@@ -260,6 +267,11 @@ export class ProviderRegistry {
       cheap: normalizeTierDefault(tierDefaults.cheap, DEFAULT_TIER_DEFAULTS.cheap),
     };
     this.emergencyStopCredits = emergencyStopCredits;
+    if (credentials) {
+      for (const [providerId, cred] of Object.entries(credentials)) {
+        this.credentials.set(providerId, cred);
+      }
+    }
   }
 
   overrideBaseUrl(providerId: string, baseUrl: string): void {
@@ -269,13 +281,16 @@ export class ProviderRegistry {
     }
   }
 
-  static fromConfig(configPath: string): ProviderRegistry {
+  static fromConfig(
+    configPath: string,
+    credentials?: Record<string, SecureCredentials>,
+  ): ProviderRegistry {
     let providers = DEFAULT_PROVIDERS.map((provider) => deepCloneProvider(provider));
     let tierDefaults = DEFAULT_TIER_DEFAULTS;
     let emergencyStopCredits = DEFAULT_EMERGENCY_STOP_CREDITS;
 
     if (!fs.existsSync(configPath)) {
-      return new ProviderRegistry(providers, tierDefaults, emergencyStopCredits);
+      return new ProviderRegistry(providers, tierDefaults, emergencyStopCredits, credentials);
     }
 
     try {
@@ -301,7 +316,7 @@ export class ProviderRegistry {
       // Keep defaults if config is invalid.
     }
 
-    return new ProviderRegistry(providers, tierDefaults, emergencyStopCredits);
+    return new ProviderRegistry(providers, tierDefaults, emergencyStopCredits, credentials);
   }
 
   resolveModel(tier: ModelTier, survivalMode = false): ResolvedModel {
@@ -430,10 +445,10 @@ export class ProviderRegistry {
   }
 
   private buildResolvedModel(provider: ProviderConfig, model: ModelConfig): ResolvedModel {
-    const apiKey = this.resolveApiKey(provider);
+    const { apiKey, baseUrl } = this.resolveCredentials(provider);
     const client = new OpenAI({
       apiKey,
-      baseURL: provider.baseUrl,
+      baseURL: baseUrl ?? provider.baseUrl,
     });
 
     return {
@@ -443,17 +458,26 @@ export class ProviderRegistry {
     };
   }
 
-  private resolveApiKey(provider: ProviderConfig): string {
-    const configured = process.env[provider.apiKeyEnvVar];
-    if (typeof configured === "string" && configured.length > 0) {
-      return configured;
+  private resolveCredentials(provider: ProviderConfig): SecureCredentials {
+    // Priority 1: Explicitly passed secure credentials
+    const secureCred = this.credentials.get(provider.id);
+    if (secureCred) {
+      return secureCred;
     }
 
+    // Priority 2: Environment variable (fallback for backward compatibility)
+    const envKey = process.env[provider.apiKeyEnvVar];
+    if (typeof envKey === "string" && envKey.length > 0) {
+      return { apiKey: envKey };
+    }
+
+    // Priority 3: Local provider special case
     if (provider.id === "local") {
-      return "local";
+      return { apiKey: "local" };
     }
 
-    return `missing-${provider.apiKeyEnvVar.toLowerCase()}`;
+    // No credentials available
+    return { apiKey: `missing-${provider.apiKeyEnvVar.toLowerCase()}` };
   }
 
   private isProviderActive(provider: ProviderConfig): boolean {

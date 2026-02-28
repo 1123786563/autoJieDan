@@ -135,27 +135,32 @@ export async function runAgentLoop(
     try {
       planModeController = new PlanModeController(db.raw);
 
-      // Bridge automaton config API keys to env vars for the provider registry.
-      // The registry reads keys from process.env; the automaton config may have
-      // them from config.json or Conway provisioning.
-      if (config.openaiApiKey && !process.env.OPENAI_API_KEY) {
-        process.env.OPENAI_API_KEY = config.openaiApiKey;
+      // Build secure credentials map - NEVER expose API keys in process.env
+      // This prevents secrets from leaking into logs, error traces, or child processes
+      const credentials: Record<string, { apiKey: string; baseUrl?: string }> = {};
+
+      if (config.openaiApiKey) {
+        credentials['openai'] = { apiKey: config.openaiApiKey };
       }
-      if (config.anthropicApiKey && !process.env.ANTHROPIC_API_KEY) {
-        process.env.ANTHROPIC_API_KEY = config.anthropicApiKey;
+
+      if (config.anthropicApiKey) {
+        credentials['anthropic'] = { apiKey: config.anthropicApiKey };
       }
-      // Conway Compute API is OpenAI-compatible. Use it as fallback when no
-      // direct OpenAI key is available. The conwayApiKey is always present
-      // (required for sandbox operations), so this ensures the orchestrator
-      // can always make inference calls.
-      if (config.conwayApiKey && !process.env.CONWAY_API_KEY) {
-        process.env.CONWAY_API_KEY = config.conwayApiKey;
-      }
-      // If no OpenAI key is set but Conway key is available, use Conway as
-      // the OpenAI provider (Conway Compute is OpenAI API-compatible).
-      if (!process.env.OPENAI_API_KEY && config.conwayApiKey) {
-        process.env.OPENAI_API_KEY = config.conwayApiKey;
-        process.env.OPENAI_BASE_URL = `${config.conwayApiUrl}/v1`;
+
+      // Conway as fallback OpenAI-compatible provider
+      if (config.conwayApiKey) {
+        credentials['conway'] = {
+          apiKey: config.conwayApiKey,
+          baseUrl: `${config.conwayApiUrl}/v1`
+        };
+
+        // If no direct OpenAI key, use Conway as OpenAI provider
+        if (!config.openaiApiKey) {
+          credentials['openai'] = {
+            apiKey: config.conwayApiKey,
+            baseUrl: `${config.conwayApiUrl}/v1`
+          };
+        }
       }
 
       const providersPath = path.join(
@@ -163,13 +168,7 @@ export async function runAgentLoop(
         ".automaton",
         "inference-providers.json",
       );
-      const registry = ProviderRegistry.fromConfig(providersPath);
-
-      // If OPENAI_BASE_URL was set (Conway fallback), update the default
-      // provider's baseUrl so the OpenAI client points to Conway Compute.
-      if (process.env.OPENAI_BASE_URL) {
-        registry.overrideBaseUrl("openai", process.env.OPENAI_BASE_URL);
-      }
+      const registry = ProviderRegistry.fromConfig(providersPath, credentials);
 
       const unifiedInference = new UnifiedInferenceClient(registry);
       const agentTracker = new SimpleAgentTracker(db);

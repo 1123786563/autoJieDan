@@ -13,6 +13,7 @@ Uses a combination of allowlist (safe APIs) and blocklist (dangerous patterns).
 import json
 import logging
 import re
+import warnings
 from typing import Any
 
 from nanobot.agent.tools.base import Tool
@@ -222,7 +223,7 @@ class BrowserEvaluateTool(Tool):
             },
             "skip_validation": {
                 "type": "boolean",
-                "description": "Skip security validation (use with extreme caution, admin only)"
+                "description": "DEPRECATED: Skip security validation. This option bypasses all XSS and data exfiltration protections. Will be removed in a future version. Use only in trusted development contexts with admin authorization."
             }
         },
         "required": ["script"]
@@ -303,6 +304,35 @@ class BrowserEvaluateTool(Tool):
         skip_validation: bool = False,
         **kwargs: Any
     ) -> str:
+        """Execute JavaScript in the browser context.
+
+        SECURITY WARNING: skip_validation bypasses all security checks.
+        Only use this for debugging purposes. Never use in production with untrusted input.
+
+        Args:
+            script: JavaScript code to execute.
+            arg: Optional argument passed to the script.
+            timeout: Execution timeout in milliseconds.
+            skip_validation: DEPRECATED - Skip security validation. Bypasses XSS protections.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            JSON string with result or error.
+        """
+        # Deprecation warning for skip_validation
+        if skip_validation:
+            warnings.warn(
+                "skip_validation is deprecated and will be removed in a future version. "
+                "This bypasses all security checks and could expose the browser to XSS attacks. "
+                "Use validated scripts only.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            logger.warning(
+                "SECURITY WARNING: Browser script validation skipped. "
+                "This should only be used for debugging purposes."
+            )
+
         # Log script execution attempt
         logger.info(f"BrowserEvaluate script attempt: {script[:100]}...")
 
@@ -315,8 +345,11 @@ class BrowserEvaluateTool(Tool):
                     "error": f"Security validation failed: {error}"
                 }, ensure_ascii=False)
         else:
-            logger.warning(
-                "BrowserEvaluate: Security validation SKIPPED (admin mode). "
+            # DEPRECATED: skip_validation will be removed in a future version
+            logger.critical(
+                "SECURITY WARNING: skip_validation=True bypasses all security checks. "
+                "This should only be used for trusted, development contexts. "
+                "Script content will NOT be validated for dangerous patterns. "
                 f"Script: {script[:100]}..."
             )
 

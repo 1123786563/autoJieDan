@@ -6,6 +6,7 @@
  * depends on not being manipulated.
  */
 
+import type { Database } from "better-sqlite3";
 import type {
   SanitizedInput,
   InjectionCheck,
@@ -23,6 +24,25 @@ const SANITIZED_PLACEHOLDER = "[SANITIZED: content removed]";
 
 // ─── Rate Limiting ──────────────────────────────────────────────
 
+// Database instance for persistent rate limiting (optional)
+let dbInstance: Database | null = null;
+
+/** Initialize database-backed rate limiting (call once at startup) */
+export function initializeRateLimitDatabase(db: Database): void {
+  dbInstance = db;
+
+  // Ensure rate_limits table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source TEXT NOT NULL,
+      timestamp INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_rate_limits_source ON rate_limits(source);
+    CREATE INDEX IF NOT EXISTS idx_rate_limits_timestamp ON rate_limits(timestamp);
+  `);
+}
+
 const rateLimitMap = new Map<string, number[]>();
 let rateLimitCallCount = 0;
 const RATE_LIMIT_SWEEP_INTERVAL = 100;
@@ -38,6 +58,45 @@ function sweepExpiredEntries(): void {
 
 function checkRateLimit(source: string): boolean {
   const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+
+  if (dbInstance) {
+    // Database-backed rate limiting (persistent across restarts)
+    try {
+      const result = dbInstance
+        .prepare(
+          `
+          SELECT COUNT(*) as count FROM rate_limits
+          WHERE source = ? AND timestamp > ?
+        `,
+        )
+        .get(source, windowStart) as { count: number };
+
+      if (result.count >= RATE_LIMIT_MAX) {
+        return true; // Rate limited
+      }
+
+      dbInstance
+        .prepare(
+          `
+          INSERT INTO rate_limits (source, timestamp) VALUES (?, ?)
+        `,
+        )
+        .run(source, now);
+
+      // Cleanup old entries probabilistically (1% chance)
+      if (Math.random() < 0.01) {
+        dbInstance.prepare(`DELETE FROM rate_limits WHERE timestamp < ?`).run(windowStart);
+      }
+
+      return false;
+    } catch (error) {
+      // Fall back to memory on database error
+      console.error("Rate limit database error, falling back to memory:", error);
+    }
+  }
+
+  // Memory-only rate limiting (existing implementation)
   const timestamps = rateLimitMap.get(source) || [];
   const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
   recent.push(now);
@@ -57,6 +116,14 @@ function checkRateLimit(source: string): boolean {
 export function _resetRateLimits(): void {
   rateLimitMap.clear();
   rateLimitCallCount = 0;
+
+  if (dbInstance) {
+    try {
+      dbInstance.exec("DELETE FROM rate_limits");
+    } catch {
+      // Ignore errors
+    }
+  }
 }
 
 // ─── Sanitize Source ────────────────────────────────────────────

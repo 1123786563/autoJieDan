@@ -18,10 +18,24 @@ export interface AutomatonIdentity {
   createdAt: string;
 }
 
-export interface WalletData {
+// Legacy wallet format (unencrypted) - for migration purposes
+export interface LegacyWalletData {
   privateKey: `0x${string}`;
   createdAt: string;
 }
+
+// Encrypted wallet format (AES-256-GCM)
+export interface EncryptedWalletData {
+  encrypted: string;
+  salt: string;
+  iv: string;
+  authTag: string;
+  createdAt: string;
+  version: 1;
+}
+
+// Union type for backward compatibility
+export type WalletData = LegacyWalletData | EncryptedWalletData;
 
 export interface ProvisionResult {
   apiKey: string;
@@ -636,6 +650,7 @@ export interface AutomatonDatabase {
   getKV(key: string): string | undefined;
   setKV(key: string, value: string): void;
   deleteKV(key: string): void;
+  getAllKV?: () => string[];
 
   // Skills
   getSkills(enabledOnly?: boolean): Skill[];
