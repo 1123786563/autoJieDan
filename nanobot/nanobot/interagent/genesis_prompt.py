@@ -166,6 +166,7 @@ class GenesisPrompt:
     """Genesis Prompt 完整结构"""
     version: str
     id: str
+    # 使用camelCase以与TypeScript端保持一致
     task_type: GenesisTaskType
     priority: GenesisPriority
     source_did: str
@@ -185,6 +186,7 @@ class GenesisPrompt:
     extensions: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """转换为字典，使用camelCase格式以与TypeScript端保持一致"""
         return {
             "version": self.version,
             "id": self.id,

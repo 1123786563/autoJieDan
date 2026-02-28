@@ -78,6 +78,36 @@ def hash_payload(payload: ANPPayload) -> bytes:
     return hashlib.sha256(payload_bytes).digest()
 
 
+def _canonical_json_stringify(value: Any) -> str:
+    """
+    规范化JSON序列化 - 确保跨系统一致性
+
+    确保与TypeScript端的canonicalJsonStringify函数行为一致
+
+    Args:
+        value: 要序列化的值
+
+    Returns:
+        规范化的JSON字符串
+    """
+    if isinstance(value, dict):
+        # 按键排序并递归处理
+        sorted_dict = {k: _canonical_json_stringify(v) if isinstance(v, (dict, list)) else v
+                       for k, v in sorted(value.items())}
+        return json.dumps(sorted_dict, separators=(',', ':'), ensure_ascii=False)
+    elif isinstance(value, list):
+        # 递归处理列表
+        return json.dumps([_canonical_json_stringify(item) if isinstance(item, (dict, list)) else item
+                          for item in value], separators=(',', ':'), ensure_ascii=False)
+    else:
+        # 对于Pydantic模型，使用model_dump_json并规范化
+        if hasattr(value, 'model_dump_json'):
+            # Pydantic v2的model_dump_json已经提供规范化的JSON
+            # 但我们需要确保与TypeScript端一致的格式
+            return value.model_dump_json(exclude_none=True, round_trip=True)
+        return json.dumps(value, separators=(',', ':'), ensure_ascii=False)
+
+
 # ============================================================================
 # 消息签名
 # ============================================================================
@@ -89,7 +119,7 @@ def sign_payload(
     key_id: str,
 ) -> ANPSignature:
     """
-    创建签名
+    创建签名 (增强版 - 使用规范化JSON序列化)
 
     Args:
         payload: 消息负载
@@ -99,7 +129,9 @@ def sign_payload(
     Returns:
         ANP 签名
     """
-    payload_bytes = payload.model_dump_json().encode("utf-8")
+    # 使用规范化JSON序列化确保跨系统一致性
+    payload_json = _canonical_json_stringify(payload)
+    payload_bytes = payload_json.encode("utf-8")
     timestamp = datetime.utcnow()
 
     # 使用 ECDSA 签名
@@ -125,7 +157,7 @@ def verify_signature(
     public_key: ec.EllipticCurvePublicKey,
 ) -> bool:
     """
-    验证消息签名
+    验证消息签名 (增强版 - 使用规范化JSON序列化)
 
     Args:
         message: ANP 消息对象
@@ -135,7 +167,9 @@ def verify_signature(
         签名是否有效
     """
     try:
-        payload_bytes = message.object.model_dump_json().encode("utf-8")
+        # 使用与签名时相同的规范化序列化方法
+        payload_json = _canonical_json_stringify(message.object)
+        payload_bytes = payload_json.encode("utf-8")
         signature_bytes = base64.b64decode(message.signature.proof_value)
 
         # 验证签名
@@ -145,9 +179,23 @@ def verify_signature(
             ec.ECDSA(hashes.SHA256()),
         )
         return True
-    except InvalidSignature:
+    except InvalidSignature as e:
+        # 记录详细错误信息用于调试
+        import logging
+        logging.error("[DID验证] 签名验证失败: %s", {
+            "messageId": message.id,
+            "signatureType": message.signature.type,
+            "verificationMethod": message.signature.verification_method,
+            "error": str(e),
+        })
         return False
-    except Exception:
+    except Exception as e:
+        # 记录其他异常
+        import logging
+        logging.error("[DID验证] 签名验证异常: %s", {
+            "messageId": message.id,
+            "error": str(e),
+        })
         return False
 
 

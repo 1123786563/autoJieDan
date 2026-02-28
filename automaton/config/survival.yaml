@@ -1,0 +1,54 @@
+# Survival Configuration
+# Budget thresholds and alert settings for automaton survival
+
+# Budget tracking configuration
+budget:
+  # Baseline daily spending in cents (e.g., 100 = $1.00/day)
+  baseline_daily_spend: 100
+
+  # Alert thresholds
+  alerts:
+    # Critical threshold in cents (triggers urgent alerts)
+    critical: 500  # $5.00
+
+    # Warning threshold in cents (triggers high priority alerts)
+    warning: 2000  # $20.00
+
+    # Minimum runway days threshold (triggers alerts if below)
+    min_runway_days: 7
+
+    # Anomaly detection multiplier (alerts if spend > baseline * this)
+    anomaly_multiplier: 2.0
+
+  # Snapshot interval in minutes (how often to record balance)
+  snapshot_interval_minutes: 60
+
+# Survival tier thresholds (in cents)
+tiers:
+  high: 50000        # $500.00
+  normal: 10000      # $100.00
+  low_compute: 2000  # $20.00
+  critical: 500      # $5.00
+  dead: 0            # $0.00
+
+# Funding request cooldowns (in hours)
+funding_cooldowns:
+  low_compute: 24    # 24 hours between low-compute tier requests
+  critical: 6        # 6 hours between critical tier requests
+  dead: 2            # 2 hours between dead tier requests
+
+# Budget alert configuration
+alerts:
+  # Enable/disable specific alert types
+  enabled:
+    - balance_critical
+    - balance_warning
+    - runway_low
+    - spending_anomaly
+
+  # Notification channels (future: email, webhook, etc.)
+  channels:
+    - local_log
+
+  # Alert deduplication window (minutes)
+  deduplication_window: 60

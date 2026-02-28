@@ -432,6 +432,407 @@ export class InteragentWebSocketServer extends EventEmitter {
 }
 
 // ============================================================================
+// WebSocket 连接池
+// ============================================================================
+
+/** 连接池中的连接信息 */
+interface PooledConnection {
+  /** WebSocket 连接 */
+  ws: WebSocket;
+  /** 目标 URL */
+  url: string;
+  /** 连接状态 */
+  state: ConnectionState;
+  /** 连接时间 */
+  connectedAt: Date;
+  /** 最后使用时间 */
+  lastUsedAt: Date;
+  /** 使用次数 */
+  useCount: number;
+  /** 是否正在重连 */
+  reconnecting: boolean;
+  /** 重试次数 */
+  retryCount: number;
+}
+
+/** 连接池配置 */
+export interface ConnectionPoolConfig {
+  /** 最大连接数 */
+  maxConnections?: number;
+  /** 连接最大空闲时间 (毫秒) */
+  maxIdleTime?: number;
+  /** 最大重试次数 */
+  maxRetries?: number;
+  /** 重连延迟基数 (毫秒) */
+  reconnectDelayBase?: number;
+  /** 重连延迟最大值 (毫秒) */
+  reconnectDelayMax?: number;
+  /** 心跳间隔 (毫秒) */
+  heartbeatInterval?: number;
+}
+
+/** 连接池统计 */
+export interface PoolStats {
+  /** 总连接数 */
+  totalConnections: number;
+  /** 活跃连接数 */
+  activeConnections: number;
+  /** 空闲连接数 */
+  idleConnections: number;
+  /** 总使用次数 */
+  totalUses: number;
+  /** 连接复用率 (0-100) */
+  reuseRate: number;
+  /** 平均重试次数 */
+  avgRetries: number;
+}
+
+/**
+ * WebSocket 连接池
+ *
+ * 功能：
+ * - 连接复用：相同 URL 的连接可以被复用
+ * - 自动重连：连接断开时自动重连，使用指数退避
+ * - 心跳检测：定期检测连接健康状态
+ * - 空闲清理：自动清理长时间空闲的连接
+ */
+export class WebSocketConnectionPool extends EventEmitter {
+  private connections: Map<string, PooledConnection> = new Map();
+  private config: Required<ConnectionPoolConfig>;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: NodeJS.Timeout | null = null;
+  private isShutdown = false;
+
+  /** 默认配置 */
+  private static readonly DEFAULT_CONFIG: Required<ConnectionPoolConfig> = {
+    maxConnections: 10,
+    maxIdleTime: 300000, // 5 分钟
+    maxRetries: 3,
+    reconnectDelayBase: 1000, // 1 秒
+    reconnectDelayMax: 30000, // 30 秒
+    heartbeatInterval: 30000, // 30 秒
+  };
+
+  constructor(config: Partial<ConnectionPoolConfig> = {}) {
+    super();
+    this.config = { ...WebSocketConnectionPool.DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * 获取或创建连接
+   */
+  async acquire(url: string): Promise<WebSocket> {
+    if (this.isShutdown) {
+      throw new Error("Connection pool is shut down");
+    }
+
+    // 检查是否已有可用连接
+    const existing = this.connections.get(url);
+    if (existing && existing.state === "connected" && existing.ws.readyState === WebSocket.OPEN) {
+      existing.lastUsedAt = new Date();
+      existing.useCount++;
+      this.emit("connection:reused", { url, useCount: existing.useCount });
+      return existing.ws;
+    }
+
+    // 创建新连接
+    return this.createConnection(url);
+  }
+
+  /**
+   * 创建新连接
+   */
+  private createConnection(url: string): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      // 检查连接数限制
+      if (this.connections.size >= this.config.maxConnections) {
+        this.cleanupIdleConnections();
+        if (this.connections.size >= this.config.maxConnections) {
+          reject(new Error("Maximum connections reached"));
+          return;
+        }
+      }
+
+      const ws = new WebSocket(url);
+      const now = new Date();
+
+      const pooledConnection: PooledConnection = {
+        ws,
+        url,
+        state: "connecting",
+        connectedAt: now,
+        lastUsedAt: now,
+        useCount: 0,
+        reconnecting: false,
+        retryCount: 0,
+      };
+
+      this.connections.set(url, pooledConnection);
+
+      ws.on("open", () => {
+        pooledConnection.state = "connected";
+        pooledConnection.lastUsedAt = new Date();
+        this.emit("connection:created", { url });
+        this.startHeartbeat();
+        resolve(ws);
+      });
+
+      ws.on("error", (error) => {
+        this.emit("connection:error", { url, error });
+        if (pooledConnection.state === "connecting") {
+          this.connections.delete(url);
+          reject(error);
+        }
+      });
+
+      ws.on("close", () => {
+        pooledConnection.state = "disconnected";
+        this.handleDisconnect(url, pooledConnection);
+      });
+    });
+  }
+
+  /**
+   * 处理连接断开
+   */
+  private handleDisconnect(url: string, conn: PooledConnection): void {
+    if (this.isShutdown) {
+      this.connections.delete(url);
+      return;
+    }
+
+    // 检查是否需要重连
+    if (conn.retryCount < this.config.maxRetries && !conn.reconnecting) {
+      conn.reconnecting = true;
+      conn.retryCount++;
+      conn.state = "connecting";
+
+      const delay = this.calculateReconnectDelay(conn.retryCount);
+
+      this.emit("connection:reconnecting", {
+        url,
+        retryCount: conn.retryCount,
+        delay,
+      });
+
+      setTimeout(() => {
+        this.reconnect(url, conn);
+      }, delay);
+    } else {
+      this.emit("connection:failed", { url, retryCount: conn.retryCount });
+      this.connections.delete(url);
+    }
+  }
+
+  /**
+   * 重新连接
+   */
+  private reconnect(url: string, oldConn: PooledConnection): void {
+    if (this.isShutdown) {
+      return;
+    }
+
+    this.connections.delete(url);
+
+    const ws = new WebSocket(url);
+    const now = new Date();
+
+    const pooledConnection: PooledConnection = {
+      ws,
+      url,
+      state: "connecting",
+      connectedAt: now,
+      lastUsedAt: now,
+      useCount: oldConn.useCount,
+      reconnecting: false,
+      retryCount: oldConn.retryCount,
+    };
+
+    this.connections.set(url, pooledConnection);
+
+    ws.on("open", () => {
+      pooledConnection.state = "connected";
+      pooledConnection.reconnecting = false;
+      this.emit("connection:reconnected", { url, retryCount: pooledConnection.retryCount });
+    });
+
+    ws.on("error", (error) => {
+      this.emit("connection:error", { url, error });
+      this.handleDisconnect(url, pooledConnection);
+    });
+
+    ws.on("close", () => {
+      pooledConnection.state = "disconnected";
+      this.handleDisconnect(url, pooledConnection);
+    });
+  }
+
+  /**
+   * 计算重连延迟 (指数退避)
+   */
+  private calculateReconnectDelay(retryCount: number): number {
+    const delay = this.config.reconnectDelayBase * Math.pow(2, retryCount - 1);
+    return Math.min(delay, this.config.reconnectDelayMax);
+  }
+
+  /**
+   * 释放连接 (不关闭，只是标记为可复用)
+   */
+  release(url: string): void {
+    const conn = this.connections.get(url);
+    if (conn) {
+      conn.lastUsedAt = new Date();
+      this.emit("connection:released", { url });
+    }
+  }
+
+  /**
+   * 关闭并移除连接
+   */
+  async close(url: string): Promise<void> {
+    const conn = this.connections.get(url);
+    if (!conn) {
+      return;
+    }
+
+    return new Promise<void>((resolve) => {
+      if (conn.ws.readyState === WebSocket.OPEN || conn.ws.readyState === WebSocket.CONNECTING) {
+        conn.ws.on("close", () => {
+          this.connections.delete(url);
+          resolve();
+        });
+        conn.ws.close(1000, "Connection closed by pool");
+      } else {
+        this.connections.delete(url);
+        resolve();
+      }
+    });
+  }
+
+  /**
+   * 清理空闲连接
+   */
+  private cleanupIdleConnections(): void {
+    const now = Date.now();
+    const toDelete: string[] = [];
+
+    for (const [url, conn] of this.connections) {
+      const idleTime = now - conn.lastUsedAt.getTime();
+      if (conn.state === "connected" && idleTime > this.config.maxIdleTime) {
+        toDelete.push(url);
+      }
+    }
+
+    for (const url of toDelete) {
+      this.close(url).catch(() => {
+        // 忽略关闭错误
+      });
+      this.emit("connection:cleaned", { url, reason: "idle" });
+    }
+  }
+
+  /**
+   * 启动心跳检测
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      return;
+    }
+
+    this.heartbeatTimer = setInterval(() => {
+      const now = Date.now();
+
+      for (const [url, conn] of this.connections) {
+        if (conn.state !== "connected" || conn.ws.readyState !== WebSocket.OPEN) {
+          continue;
+        }
+
+        const idleTime = now - conn.lastUsedAt.getTime();
+        if (idleTime > this.config.maxIdleTime) {
+          // 连接空闲太久，关闭
+          this.close(url).catch(() => {});
+          continue;
+        }
+
+        // 发送 ping
+        try {
+          conn.ws.ping();
+        } catch {
+          // ping 失败，连接可能已断开
+        }
+      }
+    }, this.config.heartbeatInterval);
+
+    // 启动定期清理
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupIdleConnections();
+    }, this.config.heartbeatInterval * 2);
+  }
+
+  /**
+   * 停止心跳检测
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
+  /**
+   * 获取连接池统计
+   */
+  getStats(): PoolStats {
+    const connections = Array.from(this.connections.values());
+    const activeConnections = connections.filter((c) => c.state === "connected").length;
+    const totalUses = connections.reduce((sum, c) => sum + c.useCount, 0);
+    const totalRetries = connections.reduce((sum, c) => sum + c.retryCount, 0);
+    const reusedConnections = connections.filter((c) => c.useCount > 1).length;
+
+    return {
+      totalConnections: connections.length,
+      activeConnections,
+      idleConnections: connections.length - activeConnections,
+      totalUses,
+      reuseRate: totalUses > 0 ? (totalUses - connections.length) / totalUses * 100 : 0,
+      avgRetries: connections.length > 0 ? totalRetries / connections.length : 0,
+    };
+  }
+
+  /**
+   * 关闭所有连接
+   */
+  async shutdown(): Promise<void> {
+    this.isShutdown = true;
+    this.stopHeartbeat();
+
+    const closePromises = Array.from(this.connections.keys()).map((url) => this.close(url));
+    await Promise.all(closePromises);
+
+    this.emit("shutdown");
+  }
+
+  /**
+   * 检查连接是否存在且可用
+   */
+  hasConnection(url: string): boolean {
+    const conn = this.connections.get(url);
+    return conn !== undefined && conn.state === "connected" && conn.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * 获取连接信息
+   */
+  getConnectionInfo(url: string): PooledConnection | undefined {
+    return this.connections.get(url);
+  }
+}
+
+// ============================================================================
 // 工具函数
 // ============================================================================
 

@@ -229,6 +229,7 @@ class TaskLifecycleManager:
         self,
         context: TaskContext,
         hooks: Optional[Dict[str, Callable]] = None,
+        retry_config: Optional["RetryConfig"] = None,
     ):
         """
         初始化管理器
@@ -236,12 +237,28 @@ class TaskLifecycleManager:
         Args:
             context: 任务上下文
             hooks: 生命周期钩子
+            retry_config: 重试配置
         """
         self.context = context
         self.hooks = hooks or {}
 
         self._listeners: Dict[str, List[Callable]] = defaultdict(list)
         self._transition_history: List[TransitionResult] = []
+
+        # 初始化重试调度器
+        self._retry_scheduler = RetryScheduler(retry_config)
+
+    # =========================================================================
+    # 生命周期管理
+    # =========================================================================
+
+    async def start_lifecycle(self) -> None:
+        """启动生命周期管理器"""
+        self._retry_scheduler.start()
+
+    async def stop_lifecycle(self) -> None:
+        """停止生命周期管理器"""
+        self._retry_scheduler.stop()
 
     # =========================================================================
     # 状态转换
@@ -334,7 +351,7 @@ class TaskLifecycleManager:
         return result
 
     async def retry(self) -> TransitionResult:
-        """重试任务"""
+        """立即重试任务 (不使用调度器)"""
         if self.context.retry_count >= self.context.max_retries:
             return TransitionResult(
                 success=False,
@@ -358,6 +375,54 @@ class TaskLifecycleManager:
             })
 
         return transition
+
+    async def schedule_retry(self) -> TransitionResult:
+        """调度延迟重试 (使用调度器)"""
+        if self.context.retry_count >= self.context.max_retries:
+            return TransitionResult(
+                success=False,
+                from_status=self.context.status,
+                to_status=TaskStatus.PENDING,
+                timestamp=datetime.now(),
+                error="Max retries exceeded",
+            )
+
+        async def retry_callback():
+            # 实际执行重试
+            self.context.retry_count += 1
+            self.context.error = None
+            self.context.error_code = None
+            self.context.completed_at = None
+            transition = self._transition(TaskStatus.PENDING)
+
+            if transition.success:
+                self._emit("retrying", {
+                    "task": self.context,
+                    "retry_count": self.context.retry_count,
+                })
+
+            return transition
+
+        # 调度重试
+        next_retry_count = self.context.retry_count + 1
+        delay_ms = await self._retry_scheduler.schedule_retry(
+            self.context.id,
+            next_retry_count,
+            retry_callback
+        )
+
+        self._emit("retry:scheduled", {
+            "task": self.context,
+            "retryCount": next_retry_count,
+            "delayMs": delay_ms,
+        })
+
+        return TransitionResult(
+            success=True,
+            from_status=self.context.status,
+            to_status=TaskStatus.PENDING,
+            timestamp=datetime.now(),
+        )
 
     # =========================================================================
     # 查询方法
@@ -409,6 +474,20 @@ class TaskLifecycleManager:
             self.context.retry_count < self.context.max_retries
             and self.context.status == TaskStatus.FAILED
         )
+
+    def get_retry_scheduler(self) -> "RetryScheduler":
+        """获取重试调度器"""
+        return self._retry_scheduler
+
+    def get_retry_stats(self) -> Dict[str, Any]:
+        """获取重试统计"""
+        scheduler_stats = self._retry_scheduler.get_stats()
+        return {
+            "schedulerStats": scheduler_stats,
+            "currentRetryCount": self.context.retry_count,
+            "maxRetries": self.context.max_retries,
+            "canRetry": self.can_retry(),
+        }
 
     def get_transition_history(self) -> List[TransitionResult]:
         """获取转换历史"""
@@ -580,3 +659,176 @@ class ErrorCodes:
     INTERNAL_ERROR = create_error_code("SYSTEM", 301, "Internal error")
     OUT_OF_MEMORY = create_error_code("SYSTEM", 302, "Out of memory")
     NETWORK_ERROR = create_error_code("SYSTEM", 303, "Network error")
+
+
+# ============================================================================
+# 重试配置
+# ============================================================================
+
+@dataclass
+class RetryConfig:
+    """重试配置"""
+    enable_exponential_backoff: bool = True
+    delay_base_ms: int = 1000  # 基础延迟 (毫秒)
+    delay_max_ms: int = 60000   # 最大延迟 (毫秒)
+    jitter: float = 0.1          # 抖动系数 (0-1)
+    max_retries: int = 3         # 最大重试次数
+
+    def calculate_delay(self, retry_count: int) -> float:
+        """计算重试延迟 (毫秒)"""
+        if self.enable_exponential_backoff:
+            delay = self.delay_base_ms * (2 ** retry_count)
+        else:
+            delay = self.delay_base_ms
+
+        delay = min(delay, self.delay_max_ms)
+
+        # 添加抖动
+        if self.jitter > 0:
+            import random
+            jitter_range = delay * self.jitter
+            delay = delay - (jitter_range / 2) + random.random() * jitter_range
+
+        return max(0, delay)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enableExponentialBackoff": self.enable_exponential_backoff,
+            "delayBaseMs": self.delay_base_ms,
+            "delayMaxMs": self.delay_max_ms,
+            "jitter": self.jitter,
+            "maxRetries": self.max_retries,
+        }
+
+
+# ============================================================================
+# 重试调度器
+# ============================================================================
+
+class RetryScheduler:
+    """
+    重试调度器 - 管理任务重试调度
+
+    功能:
+    - 指数退避重试延迟
+    - 重试状态跟踪
+    - 自动调度可重试任务
+    """
+
+    def __init__(self, config: Optional[RetryConfig] = None):
+        """
+        初始化调度器
+
+        Args:
+            config: 重试配置
+        """
+        self.config = config or RetryConfig()
+        self._scheduled_retries: Dict[str, asyncio.Task] = {}
+        self._retry_history: Dict[str, List[datetime]] = defaultdict(list)
+        self._is_running = False
+
+    def start(self) -> None:
+        """启动调度器"""
+        self._is_running = True
+
+    def stop(self) -> None:
+        """停止调度器"""
+        self._is_running = False
+
+        # 取消所有预定的重试
+        for task_id, task in self._scheduled_retries.items():
+            task.cancel()
+
+        self._scheduled_retries.clear()
+
+    async def schedule_retry(
+        self,
+        task_id: str,
+        retry_count: int,
+        retry_callback: Callable[[], Awaitable[None]]
+    ) -> float:
+        """
+        调度任务重试
+
+        Args:
+            task_id: 任务 ID
+            retry_count: 当前重试次数
+            retry_callback: 重试回调函数
+
+        Returns:
+            调度的延迟时间 (毫秒)
+        """
+        if not self._is_running:
+            raise RuntimeError("Retry scheduler is not running")
+
+        # 取消已存在的重试调度
+        self.cancel_retry(task_id)
+
+        delay_ms = self.config.calculate_delay(retry_count)
+        delay_seconds = delay_ms / 1000
+        retry_at = datetime.now() + timedelta(seconds=delay_seconds)
+
+        # 记录重试历史
+        self._retry_history[task_id].append(retry_at)
+
+        # 创建异步任务
+        async def retry_task():
+            try:
+                await asyncio.sleep(delay_seconds)
+                if task_id in self._scheduled_retries:
+                    await retry_callback()
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                # 错误会被调用方处理
+                pass
+
+        task = asyncio.create_task(retry_task())
+        self._scheduled_retries[task_id] = task
+
+        return delay_ms
+
+    def cancel_retry(self, task_id: str) -> bool:
+        """
+        取消任务重试
+
+        Args:
+            task_id: 任务 ID
+
+        Returns:
+            是否成功取消
+        """
+        task = self._scheduled_retries.get(task_id)
+        if task:
+            task.cancel()
+            del self._scheduled_retries[task_id]
+            return True
+        return False
+
+    def get_retry_history(self, task_id: str) -> List[datetime]:
+        """获取任务的重试历史"""
+        return self._retry_history.get(task_id, []).copy()
+
+    def get_scheduled_count(self) -> int:
+        """获取预定重试数量"""
+        return len(self._scheduled_retries)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """获取统计信息"""
+        total_attempts = sum(len(attempts) for attempts in self._retry_history.values())
+
+        return {
+            "scheduledRetries": len(self._scheduled_retries),
+            "totalRetryAttempts": total_attempts,
+            "tasksWithHistory": len(self._retry_history),
+        }
+
+    def clear_history(self, task_id: str) -> None:
+        """清理任务历史"""
+        self.cancel_retry(task_id)
+        self._retry_history.pop(task_id, None)
+
+    def clear_all_history(self) -> None:
+        """清理所有历史"""
+        self.stop()
+        self._retry_history.clear()

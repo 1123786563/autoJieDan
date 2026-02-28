@@ -1,0 +1,28 @@
+{
+  "templates": [
+    {
+      "name": "proposal",
+      "file": "proposal.txt",
+      "type": "proposal",
+      "description": "Standard project proposal template"
+    },
+    {
+      "name": "cover_letter",
+      "file": "cover_letter.txt",
+      "type": "cover_letter",
+      "description": "Cover letter for job applications"
+    },
+    {
+      "name": "response",
+      "file": "response.txt",
+      "type": "response",
+      "description": "Response to client questions"
+    },
+    {
+      "name": "follow_up",
+      "file": "follow_up.txt",
+      "type": "follow_up",
+      "description": "Follow-up message template"
+    }
+  ]
+}

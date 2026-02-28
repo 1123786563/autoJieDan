@@ -1438,3 +1438,102 @@ export interface AlertEvent {
   firedAt: string;
   metricValues: Record<string, number>;
 }
+
+// === Budget Tracking Types ===
+
+export interface SpendingRecord {
+  timestamp: string;
+  balanceCents: number;
+}
+
+export interface RunwayInfo {
+  estimatedDays: number;
+  confidence: "high" | "medium" | "low" | "insufficient_data";
+  averageDailySpend: number;
+  projectedDepletionDate: string | null;
+}
+
+export interface BudgetAlert {
+  type: "critical" | "warning" | "runway" | "anomaly";
+  severity: "urgent" | "high" | "medium" | "low";
+  message: string;
+  balanceCents: number;
+  estimatedDays: number;
+  timestamp: string;
+}
+
+export interface BudgetAlertThresholds {
+  critical: number; // cents
+  warning: number; // cents
+  minRunwayDays: number;
+  anomalyMultiplier: number;
+}
+
+export interface BudgetConfig {
+  baselineDailySpend: number; // cents per day
+  alertThresholds: BudgetAlertThresholds;
+  snapshotIntervalMinutes: number;
+}
+
+export interface BudgetSummary {
+  currentBalance: number;
+  runway: RunwayInfo;
+  recentSpend: number;
+  alerts: BudgetAlert[];
+}
+
+// === Business Budget Tracking Types ===
+
+export interface BudgetTransaction {
+  id: string;
+  projectId: string;
+  type: "income" | "expense";
+  amount: number; // in currency units (e.g., USD)
+  category: string; // e.g., "development", "infrastructure", "marketing"
+  description: string;
+  timestamp: string;
+  reference?: string; // External reference ID (invoice, transaction hash, etc.)
+}
+
+export interface BudgetStatus {
+  projectId: string;
+  totalBudget: number;
+  totalIncome: number;
+  totalExpenses: number;
+  remaining: number;
+  utilizationPercent: number;
+  lastUpdated: string;
+}
+
+export interface BizBudgetAlert {
+  id: string;
+  projectId: string;
+  severity: "critical" | "warning" | "info";
+  type: "overspend" | "near_limit" | "high_utilization";
+  message: string;
+  currentBudget: number;
+  currentExpenses: number;
+  remaining: number;
+  utilizationPercent: number;
+  timestamp: string;
+}
+
+export interface BudgetReport {
+  projectId: string;
+  generatedAt: string;
+  totalBudget: number;
+  totalIncome: number;
+  totalExpenses: number;
+  netBalance: number;
+  incomeByCategory: Record<string, number>;
+  expensesByCategory: Record<string, number>;
+  projectSummaries: Record<string, {
+    budget: number;
+    income: number;
+    expenses: number;
+    remaining: number;
+    utilizationPercent: number;
+  }>;
+  transactionCount: number;
+  alerts: BizBudgetAlert[];
+}

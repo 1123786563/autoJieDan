@@ -342,3 +342,368 @@ export function initializeAgentIdentity(
     publicKey,
   };
 }
+
+// ============================================================================
+// 密钥轮换机制
+// ============================================================================
+
+/**
+ * 密钥元数据
+ */
+export interface KeyMetadata {
+  /** 密钥 ID */
+  keyId: string;
+  /** DID 标识符 */
+  did: string;
+  /** 创建时间 */
+  createdAt: Date;
+  /** 过期时间 */
+  expiresAt: Date;
+  /** 是否为当前密钥 */
+  isCurrent: boolean;
+  /** 私钥文件路径 */
+  privateKeyPath: string;
+}
+
+/**
+ * 密钥轮换配置
+ */
+export interface KeyRotationConfig {
+  /** 轮换间隔（天） */
+  rotationIntervalDays: number;
+  /** 密钥生命周期（天） */
+  keyLifetimeDays: number;
+  /** 宽限期（天） */
+  gracePeriodDays: number;
+  /** 保留的历史密钥数量 */
+  maxHistoryKeys: number;
+}
+
+/**
+ * 默认密钥轮换配置
+ */
+export const DEFAULT_KEY_ROTATION_CONFIG: KeyRotationConfig = {
+  rotationIntervalDays: 30,
+  keyLifetimeDays: 90,
+  gracePeriodDays: 7,
+  maxHistoryKeys: 5,
+};
+
+/**
+ * 密钥历史存储
+ */
+const keyHistory = new Map<string, KeyMetadata[]>();
+
+/**
+ * 获取密钥历史存储路径
+ */
+function getKeyHistoryPath(): string {
+  const keyStorePath = getKeyStorePath();
+  return path.join(keyStorePath, "key_history.json");
+}
+
+/**
+ * 保存密钥历史到文件
+ */
+export function saveKeyHistory(): void {
+  const historyData: Record<string, KeyMetadata[]> = {};
+
+  for (const [did, keys] of keyHistory.entries()) {
+    historyData[did] = keys;
+  }
+
+  ensureKeyStorePath();
+  fs.writeFileSync(
+    getKeyHistoryPath(),
+    JSON.stringify(historyData, null, 2),
+    { mode: 0o600 }
+  );
+}
+
+/**
+ * 从文件加载密钥历史
+ */
+export function loadKeyHistory(): void {
+  const keyHistoryPath = getKeyHistoryPath();
+
+  if (!fs.existsSync(keyHistoryPath)) {
+    return;
+  }
+
+  try {
+    const historyData = JSON.parse(
+      fs.readFileSync(keyHistoryPath, "utf8")
+    ) as Record<string, KeyMetadata[]>;
+
+    for (const [did, keys] of Object.entries(historyData)) {
+      keyHistory.set(did, keys.map((k) => ({
+        ...k,
+        createdAt: new Date(k.createdAt),
+        expiresAt: new Date(k.expiresAt),
+      })));
+    }
+  } catch (error) {
+    // 如果加载失败，初始化空历史
+    keyHistory.clear();
+  }
+}
+
+/**
+ * 获取密钥元数据
+ */
+export function getKeyMetadata(
+  did: string,
+  keyId?: string
+): KeyMetadata | undefined {
+  const keys = keyHistory.get(did);
+  if (!keys) {
+    return undefined;
+  }
+
+  if (keyId) {
+    return keys.find((k) => k.keyId === keyId);
+  }
+
+  // 返回当前密钥
+  return keys.find((k) => k.isCurrent);
+}
+
+/**
+ * 添加密钥元数据到历史
+ */
+function addKeyMetadata(metadata: KeyMetadata): void {
+  const keys = keyHistory.get(metadata.did) ?? [];
+  keys.push(metadata);
+  keyHistory.set(metadata.did, keys);
+  saveKeyHistory();
+}
+
+/**
+ * 计算密钥年龄（天）
+ */
+function getKeyAgeDays(metadata: KeyMetadata): number {
+  const now = Date.now();
+  const created = metadata.createdAt.getTime();
+  return Math.floor((now - created) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * 检查密钥是否已过期
+ */
+function isKeyExpired(metadata: KeyMetadata): boolean {
+  return Date.now() >= metadata.expiresAt.getTime();
+}
+
+/**
+ * 检查是否应该轮换密钥
+ */
+export function shouldRotateKey(
+  did: string,
+  config: KeyRotationConfig = DEFAULT_KEY_ROTATION_CONFIG
+): boolean {
+  const metadata = getKeyMetadata(did);
+  if (!metadata) {
+    return false;
+  }
+
+  const age = getKeyAgeDays(metadata);
+  return age >= config.rotationIntervalDays;
+}
+
+/**
+ * 轮换密钥
+ */
+export function rotateKey(
+  did: string,
+  options: DidDocumentOptions,
+  config: KeyRotationConfig = DEFAULT_KEY_ROTATION_CONFIG
+): {
+  didDocument: DidDocument;
+  privateKey: crypto.KeyObject;
+  publicKey: crypto.KeyObject;
+  metadata: KeyMetadata;
+} {
+  // 获取当前密钥元数据
+  const currentMetadata = getKeyMetadata(did);
+
+  // 生成新密钥对
+  const keyPair = generateKeyPair();
+  const newPrivateKey = importPrivateKey(keyPair.privateKey);
+  const newPublicKey = crypto.createPublicKey(newPrivateKey);
+
+  // 计算新密钥 ID（递增版本号）
+  let version = 1;
+  if (currentMetadata) {
+    const match = currentMetadata.keyId.match(/key-(\d+)$/);
+    if (match) {
+      version = parseInt(match[1], 10) + 1;
+    }
+  }
+
+  const newKeyId = `${did}#key-${version}`;
+
+  // 更新 DID 文档选项中的密钥 ID
+  options.did = did;
+  const newDidDocument = generateDidDocument(newPublicKey, options);
+
+  // 保存新私钥
+  const newPrivateKeyPath = getPrivateKeyPath(`${did}_key_${version}`);
+  const privateKeyPem = newPrivateKey.export({
+    type: "sec1",
+    format: "pem",
+  }) as string;
+  fs.writeFileSync(newPrivateKeyPath, privateKeyPem, { mode: 0o600 });
+
+  // 创建新密钥元数据
+  const now = new Date();
+  const newMetadata: KeyMetadata = {
+    keyId: newKeyId,
+    did: did,
+    createdAt: now,
+    expiresAt: new Date(
+      now.getTime() + config.keyLifetimeDays * 24 * 60 * 60 * 1000
+    ),
+    isCurrent: true,
+    privateKeyPath: newPrivateKeyPath,
+  };
+
+  // 标记旧密钥为非当前
+  if (currentMetadata) {
+    currentMetadata.isCurrent = false;
+  }
+
+  // 添加新密钥元数据
+  addKeyMetadata(newMetadata);
+
+  // 清理过期的历史密钥
+  cleanupOldKeys(did, config);
+
+  // 更新缓存中的 DID 文档
+  registerDidDocument(newDidDocument);
+
+  return {
+    didDocument: newDidDocument,
+    privateKey: newPrivateKey,
+    publicKey: newPublicKey,
+    metadata: newMetadata,
+  };
+}
+
+/**
+ * 清理旧密钥
+ */
+function cleanupOldKeys(did: string, config: KeyRotationConfig): void {
+  const keys = keyHistory.get(did);
+  if (!keys) {
+    return;
+  }
+
+  const now = Date.now();
+  const keysToKeep: KeyMetadata[] = [];
+
+  for (const key of keys) {
+    // 保留当前密钥
+    if (key.isCurrent) {
+      keysToKeep.push(key);
+      continue;
+    }
+
+    // 保留在宽限期内的密钥
+    const graceEnd =
+      key.createdAt.getTime() +
+      (config.rotationIntervalDays + config.gracePeriodDays) *
+        24 *
+        60 *
+        60 *
+        1000;
+
+    if (now < graceEnd) {
+      keysToKeep.push(key);
+      continue;
+    }
+
+    // 删除过期的私钥文件
+    try {
+      if (fs.existsSync(key.privateKeyPath)) {
+        fs.unlinkSync(key.privateKeyPath);
+      }
+    } catch (error) {
+      // 忽略删除错误
+    }
+  }
+
+  // 按创建时间排序，保留最新的 N 个密钥
+  keysToKeep.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  keyHistory.set(did, keysToKeep.slice(0, config.maxHistoryKeys));
+
+  saveKeyHistory();
+}
+
+/**
+ * 获取 DID 的所有密钥
+ */
+export function getAllKeysForDid(did: string): KeyMetadata[] {
+  return (keyHistory.get(did) ?? []).slice();
+}
+
+/**
+ * 检查密钥是否可用于签名
+ */
+export function isKeyValidForSignature(
+  did: string,
+  keyId: string,
+  config: KeyRotationConfig = DEFAULT_KEY_ROTATION_CONFIG
+): boolean {
+  const metadata = getKeyMetadata(did, keyId);
+  if (!metadata) {
+    return false;
+  }
+
+  // 当前密钥始终有效
+  if (metadata.isCurrent) {
+    return true;
+  }
+
+  // 非当前密钥需要在宽限期内
+  const now = Date.now();
+  const graceEnd =
+    metadata.createdAt.getTime() +
+    (config.rotationIntervalDays + config.gracePeriodDays) *
+      24 *
+      60 *
+      60 *
+      1000;
+
+  return now < graceEnd;
+}
+
+/**
+ * 初始化密钥轮换
+ */
+export function initializeKeyRotation(
+  options: DidDocumentOptions,
+  config: KeyRotationConfig = DEFAULT_KEY_ROTATION_CONFIG
+): {
+  didDocument: DidDocument;
+  privateKey: crypto.KeyObject;
+  publicKey: crypto.KeyObject;
+} {
+  // 加载密钥历史
+  loadKeyHistory();
+
+  // 检查是否需要轮换
+  if (shouldRotateKey(options.did, config)) {
+    const result = rotateKey(options.did, options, config);
+    return {
+      didDocument: result.didDocument,
+      privateKey: result.privateKey,
+      publicKey: result.publicKey,
+    };
+  }
+
+  // 使用现有初始化逻辑
+  return initializeAgentIdentity(options);
+}
+
+// 初始化时加载密钥历史
+loadKeyHistory();

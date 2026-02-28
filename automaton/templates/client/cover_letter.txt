@@ -1,0 +1,20 @@
+Subject: Proposal for {{project_title}}
+
+Dear {{client_name}},
+
+I am writing to express my interest in your project "{{project_title}}".
+
+{{introduction}}
+
+**Why Me:**
+{{why_me}}
+
+**My Skills:**
+{{skills}}
+
+I am excited about the opportunity to work with you and am confident I can deliver the results you're looking for.
+
+Thank you for considering my proposal.
+
+Best regards,
+{{your_name}}

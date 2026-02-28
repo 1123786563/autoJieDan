@@ -54,7 +54,9 @@ export function signPayload(
   privateKey: crypto.KeyObject | Buffer,
   keyId: string
 ): ANPSignature {
-  const payloadBytes = Buffer.from(JSON.stringify(payload), "utf-8");
+  // 使用规范化JSON序列化确保跨系统一致性
+  const payloadJson = canonicalJsonStringify(payload);
+  const payloadBytes = Buffer.from(payloadJson, "utf-8");
   const timestamp = new Date().toISOString();
 
   let signatureBuffer: Buffer;
@@ -82,7 +84,7 @@ export function signPayload(
 }
 
 /**
- * 验证消息签名
+ * 验证消息签名 (增强版 - 规范化JSON序列化)
  * @param message - ANP 消息对象
  * @param publicKey - ECDSA 公钥
  * @returns 签名是否有效
@@ -92,7 +94,10 @@ export function verifySignature(
   publicKey: crypto.KeyObject
 ): boolean {
   try {
-    const payloadBytes = Buffer.from(JSON.stringify(message.object), "utf-8");
+    // 使用与签名时相同的规范化序列化方法
+    // 确保 JSON 序列化的顺序和格式一致
+    const payloadJson = canonicalJsonStringify(message.object);
+    const payloadBytes = Buffer.from(payloadJson, "utf-8");
     const signatureBuffer = Buffer.from(message.signature.proofValue, "base64");
 
     // 使用 Node.js crypto.verify 验证签名
@@ -104,9 +109,52 @@ export function verifySignature(
     );
 
     return verified;
-  } catch {
+  } catch (error) {
+    // 记录详细错误信息用于调试
+    if (error instanceof Error) {
+      console.error("[DID验证] 签名验证失败:", {
+        messageId: message.id,
+        error: error.message,
+        signatureType: message.signature.type,
+        verificationMethod: message.signature.verificationMethod,
+      });
+    }
     return false;
   }
+}
+
+/**
+ * 规范化JSON序列化 - 确保跨系统一致性
+ * @param value - 要序列化的值
+ * @returns 规范化的JSON字符串
+ */
+export function canonicalJsonStringify(value: unknown): string {
+  if (value === null || value === undefined) {
+    return JSON.stringify(value);
+  }
+
+  // 处理数组
+  if (Array.isArray(value)) {
+    return `[${value.map(v => canonicalJsonStringify(v)).join(',')}]`;
+  }
+
+  // 处理对象
+  if (typeof value === 'object') {
+    const sortedObj = Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        const val = (value as Record<string, unknown>)[key];
+        // 递归处理嵌套对象和数组
+        acc[key] = typeof val === 'object' && val !== null
+          ? JSON.parse(canonicalJsonStringify(val))
+          : val;
+        return acc;
+      }, {} as Record<string, unknown>);
+    return JSON.stringify(sortedObj);
+  }
+
+  // 处理基本类型
+  return JSON.stringify(value);
 }
 
 /**
@@ -151,6 +199,8 @@ export function addSignature(
  * 创建 ANP 消息选项
  */
 export interface CreateMessageOptions {
+  /** 发送方 DID (默认为 AUTOMATON_DID) */
+  actorDid?: string;
   /** 目标 DID */
   targetDid?: string;
   /** 关联 ID */
@@ -177,7 +227,8 @@ export function createANPMessage(
 ): ANPMessage {
   const id = ulid();
   const timestamp = new Date().toISOString();
-  const keyId = options.keyId ?? `${AUTOMATON_DID}#key-1`;
+  const actorDid = options.actorDid ?? AUTOMATON_DID;
+  const keyId = options.keyId ?? `${actorDid}#key-1`;
 
   // 创建未签名的消息
   const unsignedMessage: Omit<ANPMessage, "signature"> = {
@@ -185,7 +236,7 @@ export function createANPMessage(
     "@type": "ANPMessage",
     id,
     timestamp,
-    actor: AUTOMATON_DID,
+    actor: actorDid,
     target: options.targetDid ?? "",
     type: options.type,
     object: payload,

@@ -1,0 +1,14 @@
+Subject: Following Up on {{project_title}}
+
+Dear {{client_name}},
+
+I hope this message finds you well. I'm following up on my previous proposal for "{{project_title}}."
+
+{{follow_up_content}}
+
+I remain very interested in this project and confident I can deliver excellent results.
+
+{{additional_questions}}
+
+Best regards,
+{{your_name}}

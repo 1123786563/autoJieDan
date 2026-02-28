@@ -143,6 +143,24 @@ export interface TaskManagerConfig {
   cleanupInterval?: number;
   /** 已完成任务保留时间 (秒) */
   completedTaskTTL?: number;
+  /** 重试延迟基数 (毫秒) */
+  retryDelayBase?: number;
+  /** 重试延迟最大值 (毫秒) */
+  retryDelayMax?: number;
+  /** 重试调度间隔 (毫秒) */
+  retryScheduleInterval?: number;
+}
+
+/** 重试配置 */
+export interface RetryConfig {
+  /** 启用指数退避 */
+  exponentialBackoff?: boolean;
+  /** 重试延迟基数 (毫秒) */
+  delayBase?: number;
+  /** 重试延迟最大值 (毫秒) */
+  delayMax?: number;
+  /** 重试抖动 (0-1) */
+  jitter?: number;
 }
 
 /** 任务事件 */
@@ -151,6 +169,193 @@ export interface TaskEvent {
   task: Task;
   timestamp: Date;
   data?: Record<string, unknown>;
+}
+
+// ============================================================================
+// 重试调度器
+// ============================================================================
+
+/**
+ * 重试调度器 - 管理任务重试调度
+ *
+ * 功能:
+ * - 指数退避重试延迟
+ * - 重试状态跟踪
+ * - 自动调度可重试任务
+ */
+export class RetryScheduler extends EventEmitter {
+  private scheduledRetries: Map<string, NodeJS.Timeout> = new Map();
+  private retryHistory: Map<string, Date[]> = new Map();
+  private config: Required<RetryConfig>;
+  private isRunning = false;
+
+  /** 默认配置 */
+  private static readonly DEFAULT_CONFIG: Required<RetryConfig> = {
+    exponentialBackoff: true,
+    delayBase: 1000, // 1 秒
+    delayMax: 60000, // 60 秒
+    jitter: 0.1, // 10% 抖动
+  };
+
+  constructor(config: Partial<RetryConfig> = {}) {
+    super();
+    this.config = { ...RetryScheduler.DEFAULT_CONFIG, ...config };
+  }
+
+  /**
+   * 启动调度器
+   */
+  start(): void {
+    this.isRunning = true;
+    this.emit("started");
+  }
+
+  /**
+   * 停止调度器
+   */
+  stop(): void {
+    this.isRunning = false;
+
+    // 取消所有预定的重试
+    for (const [taskId, timer] of this.scheduledRetries) {
+      clearTimeout(timer);
+      this.emit("retry:cancelled", { taskId, reason: "Scheduler stopped" });
+    }
+
+    this.scheduledRetries.clear();
+    this.emit("stopped");
+  }
+
+  /**
+   * 计算重试延迟 (指数退避 + 抖动)
+   */
+  calculateRetryDelay(retryCount: number): number {
+    let delay: number;
+
+    if (this.config.exponentialBackoff) {
+      // 指数退避: delayBase * 2^(retryCount)
+      delay = this.config.delayBase * Math.pow(2, retryCount);
+    } else {
+      // 固定延迟
+      delay = this.config.delayBase;
+    }
+
+    // 限制最大延迟
+    delay = Math.min(delay, this.config.delayMax);
+
+    // 添加抖动 (避免惊群效应)
+    if (this.config.jitter > 0) {
+      const jitterRange = delay * this.config.jitter;
+      delay = delay - (jitterRange / 2) + Math.random() * jitterRange;
+    }
+
+    return Math.max(0, Math.floor(delay));
+  }
+
+  /**
+   * 调度任务重试
+   */
+  scheduleRetry(
+    taskId: string,
+    retryCount: number,
+    retryCallback: () => void | Promise<void>
+  ): number {
+    if (!this.isRunning) {
+      throw new Error("Retry scheduler is not running");
+    }
+
+    // 取消已存在的重试调度
+    this.cancelRetry(taskId);
+
+    const delay = this.calculateRetryDelay(retryCount);
+    const retryAt = new Date(Date.now() + delay);
+
+    // 记录重试历史
+    if (!this.retryHistory.has(taskId)) {
+      this.retryHistory.set(taskId, []);
+    }
+    this.retryHistory.get(taskId)!.push(retryAt);
+
+    // 调度重试
+    const timer = setTimeout(async () => {
+      this.scheduledRetries.delete(taskId);
+
+      try {
+        await retryCallback();
+        this.emit("retry:executed", { taskId, retryCount, delay });
+      } catch (error) {
+        this.emit("retry:error", { taskId, retryCount, error });
+      }
+    }, delay);
+
+    this.scheduledRetries.set(taskId, timer);
+
+    this.emit("retry:scheduled", { taskId, retryCount, delay, retryAt });
+
+    return delay;
+  }
+
+  /**
+   * 取消任务重试
+   */
+  cancelRetry(taskId: string): boolean {
+    const timer = this.scheduledRetries.get(taskId);
+    if (timer) {
+      clearTimeout(timer);
+      this.scheduledRetries.delete(taskId);
+      this.emit("retry:cancelled", { taskId, reason: "Manually cancelled" });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 获取任务的重试历史
+   */
+  getRetryHistory(taskId: string): Date[] {
+    return this.retryHistory.get(taskId) || [];
+  }
+
+  /**
+   * 获取预定重试数量
+   */
+  getScheduledRetryCount(): number {
+    return this.scheduledRetries.size;
+  }
+
+  /**
+   * 获取统计信息
+   */
+  getStats(): {
+    scheduledRetries: number;
+    totalRetryAttempts: number;
+    tasksWithHistory: number;
+  } {
+    const totalRetryAttempts = Array.from(this.retryHistory.values())
+      .reduce((sum, attempts) => sum + attempts.length, 0);
+
+    return {
+      scheduledRetries: this.scheduledRetries.size,
+      totalRetryAttempts,
+      tasksWithHistory: this.retryHistory.size,
+    };
+  }
+
+  /**
+   * 清理任务历史
+   */
+  clearHistory(taskId: string): void {
+    this.retryHistory.delete(taskId);
+    this.cancelRetry(taskId);
+  }
+
+  /**
+   * 清理所有历史
+   */
+  clearAllHistory(): void {
+    this.retryHistory.clear();
+    this.stop();
+  }
 }
 
 // ============================================================================
@@ -165,6 +370,7 @@ export class TaskManager extends EventEmitter {
   private idempotencyKeys: Map<string, string> = new Map(); // key -> taskId
   private config: Required<TaskManagerConfig>;
   private cleanupTimer?: NodeJS.Timeout;
+  private retryScheduler: RetryScheduler;
 
   /** 默认配置 */
   private static readonly DEFAULT_CONFIG: Required<TaskManagerConfig> = {
@@ -173,11 +379,33 @@ export class TaskManager extends EventEmitter {
     defaultMaxRetries: 3,
     cleanupInterval: 60, // 每分钟清理
     completedTaskTTL: 3600, // 保留 1 小时
+    retryDelayBase: 1000, // 1 秒
+    retryDelayMax: 60000, // 60 秒
+    retryScheduleInterval: 5000, // 5 秒
   };
 
   constructor(config: Partial<TaskManagerConfig> = {}) {
     super();
     this.config = { ...TaskManager.DEFAULT_CONFIG, ...config };
+
+    // 初始化重试调度器
+    this.retryScheduler = new RetryScheduler({
+      exponentialBackoff: true,
+      delayBase: this.config.retryDelayBase,
+      delayMax: this.config.retryDelayMax,
+    });
+
+    // 监听重试事件
+    this.retryScheduler.on("retry:executed", ({ taskId }) => {
+      const task = this.tasks.get(taskId);
+      if (task) {
+        this.emit("task:retry_scheduled", { task, timestamp: new Date() });
+      }
+    });
+
+    this.retryScheduler.on("retry:error", ({ taskId, error }) => {
+      this.emit("task:retry_failed", { taskId, error, timestamp: new Date() });
+    });
   }
 
   /**
@@ -185,6 +413,7 @@ export class TaskManager extends EventEmitter {
    */
   start(): void {
     this.startCleanupTimer();
+    this.retryScheduler.start();
     this.emit("started");
   }
 
@@ -196,6 +425,7 @@ export class TaskManager extends EventEmitter {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = undefined;
     }
+    this.retryScheduler.stop();
     this.emit("stopped");
   }
 
@@ -353,9 +583,12 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
-   * 重试任务
+   * 重试任务 (带指数退避调度)
+   *
+   * 注意：此方法会立即更新任务状态为 pending，并返回更新后的任务。
+   * 如果需要异步调度重试，请使用带延迟的版本。
    */
-  retryTask(taskId: string): Task | undefined {
+  retryTask(taskId: string, delayMs?: number): Task | undefined {
     const task = this.tasks.get(taskId);
     if (!task) return undefined;
 
@@ -364,8 +597,42 @@ export class TaskManager extends EventEmitter {
         error: `Max retries (${task.maxRetries}) exhausted`,
       });
       this.emit("task:retries_exhausted", { task, timestamp: new Date() });
+      this.retryScheduler.clearHistory(taskId);
       return task;
     }
+
+    // 立即更新任务状态为 pending (同步操作)
+    const nextRetryCount = task.retryCount + 1;
+    task.retryCount = nextRetryCount;
+    task.status = "pending";
+    task.error = undefined;
+    task.leaseExpiresAt = undefined;
+    task.updatedAt = new Date();
+
+    this.tasks.set(taskId, task);
+    this.emit("task:retried", { task, timestamp: new Date() });
+
+    return task;
+  }
+
+  /**
+   * 立即重试任务 (不使用调度器)
+   */
+  retryTaskImmediate(taskId: string): Task | undefined {
+    const task = this.tasks.get(taskId);
+    if (!task) return undefined;
+
+    if (task.retryCount >= task.maxRetries) {
+      this.updateTaskStatus(taskId, "failed", {
+        error: `Max retries (${task.maxRetries}) exhausted`,
+      });
+      this.emit("task:retries_exhausted", { task, timestamp: new Date() });
+      this.retryScheduler.clearHistory(taskId);
+      return task;
+    }
+
+    // 取消已调度的重试
+    this.retryScheduler.cancelRetry(taskId);
 
     task.retryCount++;
     task.status = "pending";
@@ -378,6 +645,32 @@ export class TaskManager extends EventEmitter {
     this.emit("task:retried", { task, timestamp: new Date() });
 
     return task;
+  }
+
+  /**
+   * 获取重试调度器
+   */
+  getRetryScheduler(): RetryScheduler {
+    return this.retryScheduler;
+  }
+
+  /**
+   * 获取重试统计
+   */
+  getRetryStats(): {
+    retryStats: ReturnType<RetryScheduler["getStats"]>;
+    tasksWithRetries: number;
+    totalRetries: number;
+  } {
+    const tasks = Array.from(this.tasks.values());
+    const tasksWithRetries = tasks.filter((t) => t.retryCount > 0).length;
+    const totalRetries = tasks.reduce((sum, t) => sum + t.retryCount, 0);
+
+    return {
+      retryStats: this.retryScheduler.getStats(),
+      tasksWithRetries,
+      totalRetries,
+    };
   }
 
   /**

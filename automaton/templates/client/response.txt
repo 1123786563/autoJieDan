@@ -1,0 +1,10 @@
+{{greeting}}
+
+Thank you for your message. {{acknowledgment}}
+
+{{response_content}}
+
+{{next_steps}}
+
+Best regards,
+{{your_name}}

@@ -1,0 +1,21 @@
+Dear {{client_name}},
+
+I came across your project "{{project_title}}" and was immediately drawn to it.
+
+{{relevant_experience}}
+
+Based on my experience, I can help you with:
+{{deliverables}}
+
+**My Approach:**
+{{approach}}
+
+**Timeline:** {{timeline}}
+**Budget:** {{bid_amount}}
+
+I noticed that your project requires {{key_skills}}. I have extensive experience with these technologies and would love to discuss how I can contribute to your project.
+
+{{questions}}
+
+Best regards,
+{{your_name}}

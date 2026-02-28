@@ -1,0 +1,73 @@
+# Upwork Project Filtering Configuration
+# Defines skill matching and bidding criteria for Upwork projects
+
+# Skill keywords for matching
+# These are the skills the agent is proficient in
+skill_keywords:
+  - typescript
+  - javascript
+  - python
+  - golang
+  - go
+  - react
+  - vue
+  - node.js
+  - api
+  - graphql
+  - rest
+  - backend
+  - frontend
+  - full stack
+
+# Keywords that exclude a project from consideration
+# Projects containing these in title/description will be skipped
+excluded_keywords:
+  - urgent
+  - asap
+  - immediately
+  - emergency
+  - agency only
+  - "agency only"
+  - "companies only"
+  - "expert only"
+
+# Preferred job categories
+# Projects in these categories get priority
+preferred_categories:
+  - web development
+  - api development
+  - backend development
+  - frontend development
+  - full stack development
+
+# Budget constraints
+budget:
+  min_usd: 100        # Minimum budget to consider
+  max_usd: 10000      # Maximum budget to consider
+  hourly_rate: 50     # Base hourly rate for calculations
+
+# Client requirements
+client:
+  min_rating: 4.0         # Minimum client rating (1-5)
+  min_spent: 100          # Minimum total spent by client
+  require_verified: false # Require client to be verified
+
+# Project constraints
+constraints:
+  max_hours_estimate: 100   # Maximum estimated hours for a project
+  max_proposals: 30         # Skip projects with more proposals than this
+  max_age_hours: 48         # Skip projects older than this (hours)
+
+# Scoring weights (must sum to 1.0)
+scoring:
+  skill_match: 0.40      # 40% weight on skill matching
+  budget_fit: 0.25       # 25% weight on budget alignment
+  client_quality: 0.15   # 15% weight on client reputation
+  freshness: 0.10        # 10% weight on project recency
+  competition: 0.10      # 10% weight on low competition
+
+# Bidding behavior
+bidding:
+  auto_bid_enabled: false   # Automatically submit bids
+  max_bids_per_day: 20      # Daily bid limit
+  min_score_threshold: 0.35 # Minimum score to consider bidding

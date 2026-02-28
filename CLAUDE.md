@@ -14,9 +14,20 @@ This is a **monorepo** containing multiple AI agent projects:
 
 ## Quick Navigation
 
+### Deployment & Operations
+- [Deployment Guide](docs/deployment-guide.md) - 部署步骤、配置说明、生产环境设置
+- [Operations Manual](docs/operations-manual.md) - 日常运维、监控告警、故障处理
+
+### Development
 - [Automaton Guidelines](automaton/CLAUDE.md) - TypeScript AI agent runtime
 - [Nanobot Guidelines](nanobot/CLAUDE.md) - Python AI assistant framework
-- [Architecture Docs](docs/) - Project documentation
+
+### Project Documentation
+- [Requirements Analysis](docs/requirements-analysis.md) - 项目需求分析
+- [Implementation Plan](docs/implementation-plan.md) - 详细实施计划
+- [Testing Guide](docs/testing-guide.md) - 测试策略和指南
+- [Security Audit Report](docs/security-audit-report.md) - 安全审计结果
+- [Phase 4 Test Report](docs/phase4-test-report.md) - 第四阶段测试报告
 
 ## Tech Stack
 
