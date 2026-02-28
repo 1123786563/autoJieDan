@@ -8,8 +8,42 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { MIGRATION_V7 } from "../state/schema.js";
+import type { PrivateKeyAccount } from "viem/accounts";
 
 // ─── Test helpers ───────────────────────────────────────────────
+
+/**
+ * Cached test account to avoid regenerating for each test.
+ * Uses environment variable TEST_PRIVATE_KEY if set, otherwise
+ * uses a deterministic test key for consistency.
+ *
+ * SECURITY NOTE: This test key (Anvil default) should ONLY be used
+ * in test environments. Never use in production!
+ */
+let _testAccount: PrivateKeyAccount | null = null;
+
+/**
+ * Get a test account for signing operations.
+ *
+ * Priority:
+ * 1. TEST_PRIVATE_KEY environment variable
+ * 2. Default Anvil test key (ONLY for testing, never production)
+ */
+async function getTestAccount(): Promise<PrivateKeyAccount> {
+  if (_testAccount) {
+    return _testAccount;
+  }
+
+  const { privateKeyToAccount, generatePrivateKey } = await import("viem/accounts");
+
+  // Use environment variable if set, otherwise use default test key
+  // The default key is Anvil's well-known test key - safe for tests only
+  const testKey = process.env.TEST_PRIVATE_KEY ??
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+  _testAccount = privateKeyToAccount(testKey as `0x${string}`);
+  return _testAccount;
+}
 
 function createTestDb(): import("better-sqlite3").Database {
   const db = new Database(":memory:");
@@ -44,12 +78,9 @@ function createTestDb(): import("better-sqlite3").Database {
 
 describe("Signing", () => {
   it("signSendPayload produces valid payload with signature", async () => {
-    const { privateKeyToAccount } = await import("viem/accounts");
     const { signSendPayload } = await import("../social/signing.js");
 
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const payload = await signSendPayload(
       account,
@@ -66,12 +97,9 @@ describe("Signing", () => {
   });
 
   it("signSendPayload enforces content size limit", async () => {
-    const { privateKeyToAccount } = await import("viem/accounts");
     const { signSendPayload } = await import("../social/signing.js");
 
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const longContent = "x".repeat(65_000);
     await expect(
@@ -80,12 +108,9 @@ describe("Signing", () => {
   });
 
   it("signPollPayload produces valid payload", async () => {
-    const { privateKeyToAccount } = await import("viem/accounts");
     const { signPollPayload } = await import("../social/signing.js");
 
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const result = await signPollPayload(account);
 
@@ -95,13 +120,10 @@ describe("Signing", () => {
   });
 
   it("signSendPayload canonical format matches runtime and CLI expectation", async () => {
-    const { privateKeyToAccount } = await import("viem/accounts");
     const { keccak256, toBytes, verifyMessage } = await import("viem");
     const { signSendPayload } = await import("../social/signing.js");
 
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const to = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     const content = "Test message";
@@ -261,10 +283,7 @@ describe("Relay URL Validation", () => {
 describe("Social Client", () => {
   it("createSocialClient throws on HTTP relay URL", async () => {
     const { createSocialClient } = await import("../social/client.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     expect(() => createSocialClient("http://relay.example.com", account)).toThrow(
       "Relay URL must use HTTPS",
@@ -273,10 +292,7 @@ describe("Social Client", () => {
 
   it("send() calls signing module and validates message", async () => {
     const { createSocialClient } = await import("../social/client.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     // Mock fetch to capture the request body
     const mockFetch = vi.fn().mockResolvedValue({
@@ -303,10 +319,7 @@ describe("Social Client", () => {
 
   it("unreadCount() throws on HTTP error (not returns 0)", async () => {
     const { createSocialClient } = await import("../social/client.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: false,
@@ -324,10 +337,7 @@ describe("Social Client", () => {
 
   it("rate limiting: 101st message in hour is rejected", async () => {
     const { createSocialClient } = await import("../social/client.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -355,10 +365,7 @@ describe("Social Client", () => {
 
   it("rate limiting: failed sends count toward the hourly limit", async () => {
     const { createSocialClient } = await import("../social/client.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     // Server returns 500 for every request
     const mockFetch = vi.fn().mockResolvedValue({
@@ -520,10 +527,7 @@ describe("Agent Card", () => {
 describe("ERC-8004", () => {
   it("leaveFeedback rejects score 0", async () => {
     const { leaveFeedback } = await import("../registry/erc8004.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const mockDb = { raw: createTestDb() } as any;
 
@@ -534,10 +538,7 @@ describe("ERC-8004", () => {
 
   it("leaveFeedback rejects score 6", async () => {
     const { leaveFeedback } = await import("../registry/erc8004.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const mockDb = { raw: createTestDb() } as any;
 
@@ -548,10 +549,7 @@ describe("ERC-8004", () => {
 
   it("leaveFeedback rejects comment over 500 chars", async () => {
     const { leaveFeedback } = await import("../registry/erc8004.js");
-    const { privateKeyToAccount } = await import("viem/accounts");
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const mockDb = { raw: createTestDb() } as any;
     const longComment = "x".repeat(501);
@@ -892,13 +890,10 @@ describe("Protocol", () => {
   });
 
   it("verifyMessageSignature validates correct signature", async () => {
-    const { privateKeyToAccount } = await import("viem/accounts");
     const { signSendPayload } = await import("../social/signing.js");
     const { verifyMessageSignature } = await import("../social/protocol.js");
 
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const payload = await signSendPayload(
       account,
@@ -911,13 +906,10 @@ describe("Protocol", () => {
   });
 
   it("verifyMessageSignature rejects wrong signer", async () => {
-    const { privateKeyToAccount } = await import("viem/accounts");
     const { signSendPayload } = await import("../social/signing.js");
     const { verifyMessageSignature } = await import("../social/protocol.js");
 
-    const account = privateKeyToAccount(
-      "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-    );
+    const account = await getTestAccount();
 
     const payload = await signSendPayload(
       account,

@@ -1,17 +1,117 @@
-"""Shell execution tool."""
+"""Shell execution tool.
+
+SECURITY MODEL:
+By default, uses a restrictive allowlist that blocks most commands.
+To enable more commands, either:
+1. Pass explicit allow_patterns to allow specific commands
+2. Set require_confirmation=False and use deny_patterns for a more permissive mode
+3. Use mode="permissive" for legacy behavior (not recommended for production)
+
+For production use, always use the default restrictive mode with explicit allowlist.
+"""
 
 import asyncio
+import logging
 import os
 import re
+from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from nanobot.agent.tools.base import Tool
 
+logger = logging.getLogger(__name__)
+
+
+class ExecMode(str, Enum):
+    """Execution mode for the shell tool."""
+    RESTRICTIVE = "restrictive"  # Default: deny all unless in allowlist
+    PERMISSIVE = "permissive"    # Legacy: allow all unless in denylist
+
+
+# Default allowlist for restrictive mode - safe, read-only commands
+DEFAULT_SAFE_COMMANDS = [
+    r"^echo\s+",                    # echo (safe output)
+    r"^pwd$",                       # print working directory
+    r"^whoami$",                    # current user
+    r"^date$",                      # current date
+    r"^uname(\s+-a)?$",             # system info
+    r"^ls(\s|$)",                   # list directory
+    r"^cat\s+",                     # read file (no sudo)
+    r"^head\s+",                    # read file head
+    r"^tail\s+",                    # read file tail
+    r"^wc(\s|$)",                   # word count
+    r"^grep(\s|$)",                 # search text
+    r"^find\s+",                    # find files (read-only)
+    r"^git\s+status",               # git status
+    r"^git\s+log",                  # git log
+    r"^git\s+branch",               # git branch
+    r"^git\s+diff",                 # git diff
+    r"^git\s+show",                 # git show
+    r"^python3?\s+--version$",      # python version
+    r"^node\s+--version$",          # node version
+    r"^npm\s+--version$",           # npm version
+    r"^pip3?\s+--version$",         # pip version
+]
+
+# Dangerous patterns that are ALWAYS blocked, even in permissive mode
+ALWAYS_BLOCKED_PATTERNS = [
+    # System destruction
+    r"\brm\s+-[rf]{1,2}\b",             # rm -rf, rm -fr
+    r"\brm\s+/",                         # rm / (root deletion)
+    r"\brm\s+\*",                        # rm * (wildcard deletion)
+    r"\bdel\s+/[sqa]\b",                 # Windows delete
+    r"\brmdir\s+/[sqa]\b",               # Windows rmdir
+    r"(?:^|[;&|]\s*)format\b",           # format command
+    r"\b(mkfs|diskpart)\b",              # disk operations
+    r"\bdd\s+if=",                       # dd (disk dump)
+    r">\s*/dev/sd",                      # write to disk device
+    r">\s*/dev/hd",                      # write to IDE disk
+
+    # System control
+    r"\b(shutdown|reboot|poweroff|halt|init\s+[06])\b",  # system power
+
+    # Privilege escalation
+    r"\bsudo\b",                         # sudo
+    r"\bsu\s",                           # su
+    r"\bchmod\s+[0-7]*777",              # world-writable
+    r"\bchown\b",                        # change ownership
+
+    # Fork bombs and resource exhaustion
+    r":\(\)\s*\{.*\};\s*:",             # fork bomb
+    r"\bmkfifo\b",                       # named pipes
+
+    # Network exfiltration (in permissive mode)
+    r"\bcurl\s+.*[;&|]",                 # curl with command chaining
+    r"\bwget\s+.*[;&|]",                 # wget with command chaining
+    r"\bnc\s+.*-[el]",                   # netcat listen mode
+    r"\bncat\s+.*--",                    # ncat with options
+
+    # Shell injection patterns
+    r"\$\(.*\)",                         # command substitution $()
+    r"`[^`]+`",                          # backtick command substitution
+    r"\|\s*sh\b",                        # pipe to shell
+    r"\|\s*bash\b",                      # pipe to bash
+    r"\|\s*python",                      # pipe to python
+    r"\|\s*perl\b",                      # pipe to perl
+    r"\|\s*ruby\b",                      # pipe to ruby
+
+    # Encoded/obfuscated commands
+    r"\\x[0-9a-fA-F]{2}",                # hex encoded
+    r"\\[0-7]{3}",                       # octal encoded
+    r"base64\s+-d",                      # base64 decode
+]
+
 
 class ExecTool(Tool):
-    """Tool to execute shell commands."""
-    
+    """Tool to execute shell commands with security guardrails.
+
+    SECURITY:
+    - Default mode is RESTRICTIVE: only explicitly allowed commands can run
+    - Always blocks dangerous patterns regardless of mode
+    - Logs all command attempts for audit
+    """
+
     def __init__(
         self,
         timeout: int = 60,
@@ -19,31 +119,42 @@ class ExecTool(Tool):
         deny_patterns: list[str] | None = None,
         allow_patterns: list[str] | None = None,
         restrict_to_workspace: bool = False,
+        mode: ExecMode = ExecMode.RESTRICTIVE,
+        require_confirmation: bool = False,
+        confirmation_callback: Callable[[str], bool] | None = None,
     ):
         self.timeout = timeout
         self.working_dir = working_dir
-        self.deny_patterns = deny_patterns or [
-            r"\brm\s+-[rf]{1,2}\b",          # rm -r, rm -rf, rm -fr
-            r"\bdel\s+/[fq]\b",              # del /f, del /q
-            r"\brmdir\s+/s\b",               # rmdir /s
-            r"(?:^|[;&|]\s*)format\b",       # format (as standalone command only)
-            r"\b(mkfs|diskpart)\b",          # disk operations
-            r"\bdd\s+if=",                   # dd
-            r">\s*/dev/sd",                  # write to disk
-            r"\b(shutdown|reboot|poweroff)\b",  # system power
-            r":\(\)\s*\{.*\};\s*:",          # fork bomb
-        ]
-        self.allow_patterns = allow_patterns or []
+        self.mode = mode
+        self.require_confirmation = require_confirmation
+        self.confirmation_callback = confirmation_callback
+
+        # Always blocked patterns (cannot be overridden)
+        self.always_blocked = ALWAYS_BLOCKED_PATTERNS
+
+        # Mode-specific patterns
+        if mode == ExecMode.RESTRICTIVE:
+            # Restrictive: use allowlist (default to safe commands)
+            self.allow_patterns = allow_patterns if allow_patterns is not None else DEFAULT_SAFE_COMMANDS
+            self.deny_patterns = []  # Not used in restrictive mode
+        else:
+            # Permissive: use denylist (legacy behavior, not recommended)
+            self.deny_patterns = deny_patterns or []
+            self.allow_patterns = []  # Not used in permissive mode
+
         self.restrict_to_workspace = restrict_to_workspace
-    
+
     @property
     def name(self) -> str:
         return "exec"
-    
+
     @property
     def description(self) -> str:
-        return "Execute a shell command and return its output. Use with caution."
-    
+        return (
+            "Execute a shell command and return its output. "
+            f"Mode: {self.mode.value}. Use with caution."
+        )
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
@@ -60,13 +171,24 @@ class ExecTool(Tool):
             },
             "required": ["command"]
         }
-    
+
     async def execute(self, command: str, working_dir: str | None = None, **kwargs: Any) -> str:
         cwd = working_dir or self.working_dir or os.getcwd()
+
+        # Log all command attempts for security audit
+        logger.info(f"ExecTool command attempt: {command[:100]}... (cwd={cwd})")
+
         guard_error = self._guard_command(command, cwd)
         if guard_error:
+            logger.warning(f"ExecTool blocked command: {guard_error}")
             return guard_error
-        
+
+        # Human-in-the-loop confirmation for dangerous operations
+        if self.require_confirmation and self.confirmation_callback:
+            if not self.confirmation_callback(command):
+                logger.warning(f"ExecTool command rejected by user: {command[:50]}...")
+                return "Error: Command rejected by user confirmation"
+
         try:
             process = await asyncio.create_subprocess_shell(
                 command,
@@ -74,7 +196,7 @@ class ExecTool(Tool):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
-            
+
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(),
@@ -89,44 +211,59 @@ class ExecTool(Tool):
                 except asyncio.TimeoutError:
                     pass
                 return f"Error: Command timed out after {self.timeout} seconds"
-            
+
             output_parts = []
-            
+
             if stdout:
                 output_parts.append(stdout.decode("utf-8", errors="replace"))
-            
+
             if stderr:
                 stderr_text = stderr.decode("utf-8", errors="replace")
                 if stderr_text.strip():
                     output_parts.append(f"STDERR:\n{stderr_text}")
-            
+
             if process.returncode != 0:
                 output_parts.append(f"\nExit code: {process.returncode}")
-            
+
             result = "\n".join(output_parts) if output_parts else "(no output)"
-            
+
             # Truncate very long output
             max_len = 10000
             if len(result) > max_len:
                 result = result[:max_len] + f"\n... (truncated, {len(result) - max_len} more chars)"
-            
+
+            logger.info(f"ExecTool command completed: exit_code={process.returncode}")
             return result
-            
+
         except Exception as e:
+            logger.error(f"ExecTool error: {e}")
             return f"Error executing command: {str(e)}"
 
     def _guard_command(self, command: str, cwd: str) -> str | None:
-        """Best-effort safety guard for potentially destructive commands."""
+        """Security guard for shell commands.
+
+        Returns error message if blocked, None if allowed.
+        """
         cmd = command.strip()
         lower = cmd.lower()
 
-        for pattern in self.deny_patterns:
-            if re.search(pattern, lower):
+        # Always check these patterns regardless of mode
+        for pattern in self.always_blocked:
+            if re.search(pattern, lower, re.IGNORECASE):
                 return "Error: Command blocked by safety guard (dangerous pattern detected)"
 
-        if self.allow_patterns:
-            if not any(re.search(p, lower) for p in self.allow_patterns):
-                return "Error: Command blocked by safety guard (not in allowlist)"
+        if self.mode == ExecMode.RESTRICTIVE:
+            # Restrictive mode: only allow explicitly permitted commands
+            if not any(re.search(p, cmd, re.IGNORECASE) for p in self.allow_patterns):
+                return (
+                    "Error: Command blocked by safety guard (not in allowlist). "
+                    "Use mode='permissive' with caution if you need more flexibility."
+                )
+        else:
+            # Permissive mode: block patterns in deny list
+            for pattern in self.deny_patterns:
+                if re.search(pattern, lower, re.IGNORECASE):
+                    return "Error: Command blocked by safety guard (dangerous pattern detected)"
 
         if self.restrict_to_workspace:
             if "..\\" in cmd or "../" in cmd:
