@@ -27,3 +27,4 @@ dist/
 .omc/
 .benchmarks/
 .vscode/
+coverage/

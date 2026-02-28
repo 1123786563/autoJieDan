@@ -66,9 +66,11 @@ export class ProceduralMemoryManager {
    */
   recordOutcome(name: string, success: boolean): void {
     try {
-      const column = success ? "success_count" : "failure_count";
+      // SECURITY: Column name is selected from whitelist, not from user input
+      const ALLOWED_COLUMNS = ["success_count", "failure_count"] as const;
+      const col = success ? ALLOWED_COLUMNS[0] : ALLOWED_COLUMNS[1];
       this.db.prepare(
-        `UPDATE procedural_memory SET ${column} = ${column} + 1, last_used_at = datetime('now'), updated_at = datetime('now') WHERE name = ?`,
+        `UPDATE procedural_memory SET ${col} = ${col} + 1, last_used_at = datetime('now'), updated_at = datetime('now') WHERE name = ?`,
       ).run(name);
     } catch (error) {
       logger.error("Failed to record outcome", error instanceof Error ? error : undefined);

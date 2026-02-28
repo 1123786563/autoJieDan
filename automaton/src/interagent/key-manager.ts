@@ -223,6 +223,7 @@ export class KeyManager extends EventEmitter {
 
   /**
    * 从密码生成密钥
+   * SECURITY: Uses scrypt for key derivation to prevent brute-force attacks
    */
   generateKeyFromPassphrase(
     purpose: KeyPurpose,
@@ -236,14 +237,17 @@ export class KeyManager extends EventEmitter {
     } = {}
   ): Key {
     const algorithm = options.algorithm || this.config.defaultAlgorithm;
-    const salt = options.salt || crypto.randomBytes(16).toString("hex");
-    const keyMaterial = passphrase + salt;
+    const saltBytes = options.salt ? Buffer.from(options.salt, "hex") : crypto.randomBytes(16);
+    const salt = saltBytes.toString("hex");
     const keyBytes = this.getKeyLength(algorithm);
-    const derivedKey = crypto
-      .createHash("sha256")
-      .update(keyMaterial)
-      .digest()
-      .subarray(0, keyBytes);
+
+    // SECURITY: Use scrypt with high cost parameters to resist brute-force attacks
+    // N=16384 (CPU/memory cost), r=8 (block size), p=1 (parallelization)
+    const derivedKey = crypto.scryptSync(passphrase, saltBytes, keyBytes, {
+      N: 16384,
+      r: 8,
+      p: 1,
+    });
 
     const id = this.generateKeyId();
     const now = new Date();

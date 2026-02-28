@@ -59,7 +59,7 @@ browser = [
 security-constraints = [
     "urllib3>=2.6.3",          # CVE-2025-50182, CVE-2025-50181, CVE-2025-66418, CVE-2025-66471
     "transformers>=4.53.0",    # CVE-2025-3262, CVE-2025-3263, CVE-2025-3264, CVE-2025-3777
-    # Note: torch CVE-2025-2953, CVE-2025-3730 - latest version 2.2.2 has partial fixes
+    "torch>=2.8.0",            # CVE-2025-2953, CVE-2025-3730
     "python-jose>=3.4.0",      # PYSEC-2024-232, PYSEC-2024-233
     "setuptools>=78.1.1",      # PYSEC-2025-49
     "pyasn1>=0.6.2",           # CVE-2026-23490
@@ -68,7 +68,6 @@ security-constraints = [
     # Fixed vulnerabilities
     "text-generation>=3.3.7",  # CVE-2024-3924, CVE-2026-0599 (was 0.7.0)
     # Packages with no fixed version available (monitor for updates):
-    # - torch 2.2.2: CVE-2025-2953, CVE-2025-3730, CVE-2025-2953 (latest version affected)
     # - ecdsa 0.19.1: CVE-2024-23342 (latest version affected)
     # - diskcache 5.6.3: CVE-2025-69872 (no fix available)
     # - biopython 1.86: CVE-2025-68463 (no fix available)
