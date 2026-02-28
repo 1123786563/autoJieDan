@@ -1,0 +1,28 @@
+# Security constraints for indirect dependencies
+# Use: pip install -c constraints.txt
+# Generated from security audit on 2026-03-01
+
+# NOTE: Some CVE fixes are not yet available on PyPI
+# The versions below are the best available at the time of audit
+
+# pypdf: Fix CVE-2026-28351 (UPGRADED)
+pypdf>=6.7.4
+
+# torch: CVE-2025-2953, CVE-2025-3730, PYSEC-2025-41, PYSEC-2024-259
+# WARNING: Fix versions (2.5.0+) not yet available on PyPI
+# Current latest: 2.2.2
+# Action: Monitor for updates and upgrade when available
+torch>=2.2.2
+
+# text-generation: CVE-2024-3924, CVE-2026-0599
+# WARNING: Fix versions (2.0.0+/3.3.7+) not yet available on PyPI
+# Current latest: 0.7.0
+# Action: Monitor for updates and upgrade when available
+text-generation>=0.7.0
+
+# Additional security constraints for other known CVEs
+urllib3>=2.6.3
+transformers>=4.53.0
+python-jose>=3.4.0
+setuptools>=78.1.1
+pyasn1>=0.6.2

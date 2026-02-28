@@ -223,13 +223,14 @@ export class GenesisPromptSender {
       this.config.did!
     );
 
+    // 构建上下文数组
+    const context: string[] = [
+      ...DEFAULT_CONTEXT,
+      "https://w3id.org/anp/genesis#",
+    ];
+
     const message: ANPMessage = {
-      "@context": [
-        ...DEFAULT_CONTEXT,
-        {
-          genesis: "https://w3id.org/anp/genesis#",
-        },
-      ],
+      "@context": context,
       "@type": "ANPMessage",
       id: ulid(),
       timestamp: new Date().toISOString(),

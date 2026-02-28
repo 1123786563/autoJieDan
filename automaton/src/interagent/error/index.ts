@@ -45,6 +45,15 @@ export interface ErrorContext {
   stackTrace?: string;
   /** 额外的上下文数据 */
   metadata?: Record<string, unknown>;
+  /** ANP 协议上下文 (与 ErrorReportPayload 保持一致) */
+  "anp:context": {
+    taskId: string;
+    timestamp: string;
+    stackTrace?: string;
+    files?: string[];
+    modules?: string[];
+    phase?: string;
+  };
 }
 
 /** 错误报告选项 */
@@ -57,6 +66,8 @@ export interface ErrorReportOptions {
   relatedFiles?: string[];
   /** 错误相关模块 */
   relatedModules?: string[];
+  /** 错误发生的阶段 */
+  phase?: string;
 }
 
 // ============================================================================
@@ -73,8 +84,8 @@ export interface ErrorReportOptions {
  * - 错误分类和分析
  */
 export class ErrorHandler {
-  /** 错误代码映射 */
-  private static readonly ERROR_CODES: Record<string, string> = {
+  /** 错误代码映射 (protected 允许子类访问) */
+  protected static readonly ERROR_CODES: Record<string, string> = {
     // 通用错误
     UNKNOWN_ERROR: "ANP_ERR_0001",
     INVALID_INPUT: "ANP_ERR_0002",
@@ -234,7 +245,7 @@ export class ErrorHandler {
       context.phase = options.phase;
     }
 
-    return context as Record<string, unknown>;
+    return context;
   }
 
   /**
@@ -427,11 +438,9 @@ export class ErrorHandler {
 /**
  * 错误恢复策略
  */
-export class ErrorRecoveryStrategy {
-  private handler: ErrorHandler;
-
+export class ErrorRecoveryStrategy extends ErrorHandler {
   constructor() {
-    this.handler = new ErrorHandler();
+    super();
   }
 
   /**

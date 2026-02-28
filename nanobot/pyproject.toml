@@ -56,6 +56,7 @@ browser = [
 ]
 # Security constraints for indirect dependencies with known CVEs
 # Run `pip-audit` to verify no known vulnerabilities
+# Also see constraints.txt for pip enforcement
 security-constraints = [
     "urllib3>=2.6.3",          # CVE-2025-50182, CVE-2025-50181, CVE-2025-66418, CVE-2025-66471
     "transformers>=4.53.0",    # CVE-2025-3262, CVE-2025-3263, CVE-2025-3264, CVE-2025-3777

@@ -30,7 +30,7 @@ export interface Milestone {
   id: string;
   title: string;
   description: string;
-  deliverables: string[];
+  deliverables: string | string[];
   estimated_hours: number;
   percentage: number; // Percentage of total payment
 }
@@ -351,7 +351,7 @@ export class BidGenerator implements IBidGenerator {
    */
   private generateExpertiseSection(project: ProjectCandidate, score: ProjectScore): string {
     const relevantSkills = (score.matched_skills || project.skills_required).slice(0, 4);
-    const skillsList = relevantSkills.map((s) => `• ${s}`).join("\n");
+    const skillsList = relevantSkills.map((s: string) => `• ${s}`).join("\n");
 
     return `**Why I'm a Great Fit**\n\nI have extensive experience with:\n${skillsList}\n\n${
       relevantSkills.length > 2

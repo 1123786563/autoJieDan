@@ -69,6 +69,7 @@ export interface ProjectScore {
   };
   reasoning: string[];
   estimated_hours?: number;
+  matched_skills?: string[];
 }
 
 /**
