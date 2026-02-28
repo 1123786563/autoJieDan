@@ -1,5 +1,6 @@
 """Configuration schema using Pydantic."""
 
+import re
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic.alias_generators import to_camel
@@ -361,6 +362,10 @@ class Config(BaseSettings):
         model_normalized = model_lower.replace("-", "_")
         model_prefix = model_lower.split("/", 1)[0] if "/" in model_lower else ""
         normalized_prefix = model_prefix.replace("-", "_")
+
+        # SECURITY: Validate model name format to prevent injection
+        if model and not re.match(r'^[a-zA-Z0-9_./-]+$', model):
+            raise ValueError(f"Invalid model name format: {model[:50]}...")
 
         def _kw_matches(kw: str) -> bool:
             kw = kw.lower()

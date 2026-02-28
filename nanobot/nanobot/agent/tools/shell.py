@@ -14,6 +14,8 @@ import asyncio
 import logging
 import os
 import re
+import shlex
+import shutil
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
@@ -190,12 +192,36 @@ class ExecTool(Tool):
                 return "Error: Command rejected by user confirmation"
 
         try:
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-            )
+            # SECURITY: Use exec instead of shell when possible for better isolation
+            # For simple commands, split and use exec to avoid shell injection vectors
+            cmd_parts = shlex.split(command)
+
+            # Check if we can safely use exec mode (single command, no shell operators)
+            shell_operators = ['|', '&&', '||', ';', '>', '>>', '<', '&', '$(', '`']
+            use_exec = not any(op in command for op in shell_operators)
+
+            if use_exec and cmd_parts:
+                # Resolve command to absolute path for additional safety
+                cmd_name = cmd_parts[0]
+                if not os.path.isabs(cmd_name):
+                    resolved = shutil.which(cmd_name)
+                    if resolved:
+                        cmd_parts[0] = resolved
+
+                process = await asyncio.create_subprocess_exec(
+                    *cmd_parts,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                )
+            else:
+                # Fall back to shell for complex commands (pipes, redirects, etc.)
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                )
 
             try:
                 stdout, stderr = await asyncio.wait_for(

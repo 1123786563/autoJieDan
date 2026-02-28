@@ -28,6 +28,8 @@ services:
       - INTERAGENT_HTTP_PORT=10790
       - INTERAGENT_WS_PORT=10791
       - INTERAGENT_SECRET=${INTERAGENT_SECRET:?INTERAGENT_SECRET is required}
+      # SECURITY: Enable TLS for internal communication (recommended for production)
+      # - INTERAGENT_TLS_ENABLED=true
 
       # Optional: LLM configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -80,6 +82,8 @@ services:
       # Interagent configuration
       - INTERAGENT_ENABLED=${INTERAGENT_ENABLED:-true}
       - INTERAGENT_HTTP_PORT=10791
+      # SECURITY: Use HTTPS for internal communication (recommended for production)
+      # - INTERAGENT_AUTOMATON_URL=https://automaton:10790
       - INTERAGENT_AUTOMATON_URL=http://automaton:10790
       - INTERAGENT_SECRET=${INTERAGENT_SECRET:?INTERAGENT_SECRET is required}
 
@@ -170,7 +174,8 @@ services:
 
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      # SECURITY: Password must be set explicitly, no default allowed
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=http://localhost:3000
       - GF_INSTALL_PLUGINS=

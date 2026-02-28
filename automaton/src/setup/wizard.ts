@@ -41,7 +41,9 @@ export async function runSetupWizard(): Promise<AutomatonConfig> {
   try {
     const result = await provision();
     apiKey = result.apiKey;
-    console.log(chalk.green(`  API key provisioned: ${result.keyPrefix}...\n`));
+    // SECURITY: Only log key prefix (first 8 chars), never the full key
+    const safePrefix = result.keyPrefix ? result.keyPrefix.substring(0, 8) + '...' : '(provisioned)';
+    console.log(chalk.green(`  API key provisioned: ${safePrefix}\n`));
   } catch (err: any) {
     console.log(chalk.yellow(`  Auto-provision failed: ${err.message}`));
     console.log(chalk.yellow("  You can enter a key manually, or press Enter to skip.\n"));

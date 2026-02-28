@@ -346,8 +346,11 @@ class KeyManager(EventEmitter):
         self.emit("key:generated", key)
         return key
 
-    # PBKDF2 默认迭代次数（OWASP 推荐 >= 600,000 for SHA256）
-    PBKDF2_ITERATIONS = 600000
+    # PBKDF2 默认迭代次数
+    # OWASP 2023 推荐 >= 600,000 for SHA256
+    # NIST 2023 推荐 >= 2,048,000 for higher security
+    # We use NIST recommendation for stronger security posture
+    PBKDF2_ITERATIONS = 2048000
 
     def generate_key_from_passphrase(
         self,
