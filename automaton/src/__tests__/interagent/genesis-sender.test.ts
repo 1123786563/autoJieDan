@@ -14,9 +14,29 @@ import {
   createGenesisPrompt,
   type GenesisPrompt,
 } from "../../interagent/genesis-prompt.js";
+import * as crypto from "crypto";
 
 // Mock fetch
 global.fetch = vi.fn();
+
+// Mock KeyObject for testing
+const mockKeyObject = {} as crypto.KeyObject;
+
+// Mock importPrivateKey to return mock KeyObject
+vi.mock("../../anp/did.js", () => ({
+  importPrivateKey: vi.fn(() => mockKeyObject),
+}));
+
+// Mock signPayload to avoid real crypto operations with mock keys
+vi.mock("../../anp/signature.js", () => ({
+  signPayload: vi.fn(() => ({
+    type: "EcdsaSecp256r1Signature2019",
+    created: new Date().toISOString(),
+    verificationMethod: "did:anp:automaton:main#key-1",
+    proofPurpose: "authentication",
+    proofValue: "mock-signature-base64",
+  })),
+}));
 
 describe("GenesisPromptSender", () => {
   let sender: GenesisPromptSender;

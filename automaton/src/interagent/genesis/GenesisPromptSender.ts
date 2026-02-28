@@ -18,7 +18,9 @@ import type {
   ANPSignature,
 } from "../../anp/types.js";
 import { signPayload } from "../../anp/signature.js";
+import { importPrivateKey } from "../../anp/did.js";
 import { AUTOMATON_DID, DEFAULT_CONTEXT } from "../../anp/types.js";
+import * as crypto from "crypto";
 
 // ============================================================================
 // 类型定义
@@ -60,7 +62,7 @@ export interface SendResult {
  */
 export class GenesisPromptSender {
   private config: GenesisPromptSenderConfig;
-  private privateKey: string;
+  private privateKey: crypto.KeyObject;
 
   constructor(config: GenesisPromptSenderConfig) {
     this.config = {
@@ -70,7 +72,8 @@ export class GenesisPromptSender {
       serviceEndpoint: config.serviceEndpoint,
       defaultTtl: config.defaultTtl || 3600,
     };
-    this.privateKey = config.privateKey;
+    // Convert PEM string to KeyObject for signing
+    this.privateKey = importPrivateKey(config.privateKey);
   }
 
   // ========================================================================

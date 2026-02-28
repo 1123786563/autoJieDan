@@ -33,6 +33,11 @@ import type { SoulModel, SoulHistoryRow } from "../types.js";
 
 // ─── Test Helpers ───────────────────────────────────────────────
 
+function getTestSoulPath(testId: string): string {
+  const home = process.env.HOME || "/root";
+  return `${home}/.automaton/soul-test-${testId}/SOUL.md`;
+}
+
 function createTestDb(): Database.Database {
   const db = new Database(":memory:");
   db.pragma("journal_mode = WAL");
@@ -640,8 +645,7 @@ describe("Soul Tools", () => {
 
   it("updateSoul with valid content succeeds and increments version", async () => {
     const { updateSoul } = await import("../soul/tools.js");
-    const tmpDir = await import("os").then((os) => os.tmpdir());
-    const tmpPath = `${tmpDir}/soul-test-${Date.now()}/SOUL.md`;
+    const testPath = getTestSoulPath(`valid-${Date.now()}`);
 
     const result = await updateSoul(
       db,
@@ -651,7 +655,7 @@ describe("Soul Tools", () => {
       },
       "agent",
       "First update",
-      tmpPath,
+      testPath,
     );
 
     expect(result.success).toBe(true);
@@ -664,7 +668,7 @@ describe("Soul Tools", () => {
       { corePurpose: "Help build great web apps" },
       "agent",
       "Second update",
-      tmpPath,
+      testPath,
     );
 
     expect(result2.success).toBe(true);
@@ -677,8 +681,7 @@ describe("Soul Tools", () => {
 
   it("updateSoul with injection content fails validation", async () => {
     const { updateSoul } = await import("../soul/tools.js");
-    const tmpDir = await import("os").then((os) => os.tmpdir());
-    const tmpPath = `${tmpDir}/soul-test-inject-${Date.now()}/SOUL.md`;
+    const testPath = getTestSoulPath(`inject-${Date.now()}`);
 
     const result = await updateSoul(
       db,
@@ -687,7 +690,7 @@ describe("Soul Tools", () => {
       },
       "agent",
       "Injection attempt",
-      tmpPath,
+      testPath,
     );
 
     expect(result.success).toBe(false);
@@ -697,8 +700,7 @@ describe("Soul Tools", () => {
 
   it("viewSoul returns current soul model", async () => {
     const { updateSoul, viewSoul } = await import("../soul/tools.js");
-    const tmpDir = await import("os").then((os) => os.tmpdir());
-    const tmpPath = `${tmpDir}/soul-test-view-${Date.now()}/SOUL.md`;
+    const testPath = getTestSoulPath(`view-${Date.now()}`);
 
     await updateSoul(
       db,
@@ -709,10 +711,10 @@ describe("Soul Tools", () => {
       },
       "genesis",
       "Initial",
-      tmpPath,
+      testPath,
     );
 
-    const soul = viewSoul(db, tmpPath);
+    const soul = viewSoul(db, testPath);
     expect(soul).toBeDefined();
     expect(soul!.corePurpose).toBe("Test purpose");
     expect(soul!.name).toBe("ViewTestBot");
@@ -720,11 +722,10 @@ describe("Soul Tools", () => {
 
   it("viewSoulHistory returns history entries", async () => {
     const { updateSoul, viewSoulHistory } = await import("../soul/tools.js");
-    const tmpDir = await import("os").then((os) => os.tmpdir());
-    const tmpPath = `${tmpDir}/soul-test-history-${Date.now()}/SOUL.md`;
+    const testPath = getTestSoulPath(`history-${Date.now()}`);
 
-    await updateSoul(db, { corePurpose: "V1" }, "genesis", "First", tmpPath);
-    await updateSoul(db, { corePurpose: "V2" }, "agent", "Second", tmpPath);
+    await updateSoul(db, { corePurpose: "V1" }, "genesis", "First", testPath);
+    await updateSoul(db, { corePurpose: "V2" }, "agent", "Second", testPath);
 
     const history = viewSoulHistory(db);
     expect(history.length).toBeGreaterThanOrEqual(2);

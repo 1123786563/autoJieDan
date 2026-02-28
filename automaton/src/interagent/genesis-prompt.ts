@@ -349,6 +349,9 @@ export function createGenesisPrompt(options: {
   technical?: TechnicalConstraints;
   business?: BusinessTerms;
   context?: GenesisContext;
+  timeoutMs?: number;
+  requireConfirmation?: boolean;
+  tags?: string[];
 }): GenesisPrompt {
   return {
     version: "1.0.0",
@@ -365,6 +368,9 @@ export function createGenesisPrompt(options: {
     technical: options.technical,
     business: options.business,
     context: options.context,
+    timeoutMs: options.timeoutMs,
+    requireConfirmation: options.requireConfirmation,
+    tags: options.tags,
   };
 }
 

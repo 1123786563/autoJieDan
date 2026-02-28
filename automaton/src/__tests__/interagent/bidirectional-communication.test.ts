@@ -74,8 +74,9 @@ describe("T011: 双向通信测试", () => {
 
   describe("Automaton -> Nanobot 消息发送", () => {
     it("应该能从 Automaton 发送消息到 Nanobot", async () => {
+      // Client connects to automatonPort to receive messages from automatonServer
       const nanobotClient = new WebSocket(
-        `ws://127.0.0.1:${nanobotPort}?did=did:anp:test:client`
+        `ws://127.0.0.1:${automatonPort}?did=did:anp:test:client`
       );
 
       const receivedPromise = new Promise((resolve) => {
@@ -116,8 +117,9 @@ describe("T011: 双向通信测试", () => {
 
     it("应该能正确路由消息到目标 DID", async () => {
       const targetDid = "did:anp:test:specific";
+      // Client connects to automatonPort to receive messages from automatonServer
       const nanobotClient = new WebSocket(
-        `ws://127.0.0.1:${nanobotPort}?did=${targetDid}`
+        `ws://127.0.0.1:${automatonPort}?did=${targetDid}`
       );
 
       const receivedPromise = new Promise((resolve) => {
@@ -207,6 +209,10 @@ describe("T011: 双向通信测试", () => {
         nanobotClient.once("open", () => resolve());
       });
 
+      // Wait for welcome message to be received
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      receivedMessages.length = 0; // Clear welcome message
+
       // 并发发送多条消息
       const messageIds: string[] = [];
 
@@ -215,7 +221,7 @@ describe("T011: 双向通信测试", () => {
         messageIds.push(messageId);
 
         const message = createProgressEvent(
-          "did:anp:automaton:main",
+          "did:anp:nanobot:main",
           "did:anp:test:concurrent",
           {
             taskId: messageId,
@@ -223,7 +229,7 @@ describe("T011: 双向通信测试", () => {
           }
         );
 
-        automatonServer.sendToDid("did:anp:test:concurrent", message);
+        nanobotServer.sendToDid("did:anp:test:concurrent", message);
       }
 
       const startTime = Date.now();
@@ -250,10 +256,10 @@ describe("T011: 双向通信测试", () => {
       const clients: WebSocket[] = [];
       const receivedCounts: Map<number, number> = new Map();
 
-      // 创建多个客户端
+      // 创建多个客户端 - 连接到 nanobotPort
       for (let i = 0; i < concurrentClients; i++) {
         const client = new WebSocket(
-          `ws://127.0.0.1:${automatonPort}?did=did:anp:concurrent:${i}`
+          `ws://127.0.0.1:${nanobotPort}?did=did:anp:concurrent:${i}`
         );
 
         receivedCounts.set(i, 0);
@@ -269,7 +275,13 @@ describe("T011: 双向通信测试", () => {
         clients.push(client);
       }
 
-      // 从每个客户端发送多条消息
+      // Wait for welcome messages to be received
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      for (let i = 0; i < concurrentClients; i++) {
+        receivedCounts.set(i, 0); // Reset counts after welcome messages
+      }
+
+      // 从 nanobotServer 发送消息到每个客户端
       for (let clientIdx = 0; clientIdx < concurrentClients; clientIdx++) {
         for (let msgIdx = 0; msgIdx < messagesPerClient; msgIdx++) {
           const message = createProgressEvent(
@@ -319,10 +331,14 @@ describe("T011: 双向通信测试", () => {
         nanobotClient.once("open", () => resolve());
       });
 
-      // 按顺序发送消息
+      // Wait for welcome message to be received
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      receivedMessages.length = 0; // Clear welcome message
+
+      // 按顺序发送消息 - client is connected to nanobotPort, so send via nanobotServer
       for (let i = 0; i < 50; i++) {
         const message = createProgressEvent(
-          "did:anp:automaton:main",
+          "did:anp:nanobot:main",
           "did:anp:test:ordered",
           {
             taskId: ulid(),
@@ -331,7 +347,7 @@ describe("T011: 双向通信测试", () => {
           }
         );
 
-        automatonServer.sendToDid("did:anp:test:ordered", message);
+        nanobotServer.sendToDid("did:anp:test:ordered", message);
 
         // 添加小延迟确保发送顺序
         await new Promise<void>((resolve) => setTimeout(resolve, 10));
@@ -364,12 +380,16 @@ describe("T011: 双向通信测试", () => {
         nanobotClient.once("open", () => resolve());
       });
 
+      // Wait for welcome message to be received
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      receivedMessages.length = 0; // Clear welcome message
+
       // 发送具有相同 correlationId 的消息序列
       const sequenceLength = 10;
 
       for (let i = 0; i < sequenceLength; i++) {
         const message = createProgressEvent(
-          "did:anp:automaton:main",
+          "did:anp:nanobot:main",
           "did:anp:test:correlation",
           {
             taskId: ulid(),
@@ -379,7 +399,7 @@ describe("T011: 双向通信测试", () => {
           correlationId
         );
 
-        automatonServer.sendToDid("did:anp:test:correlation", message);
+        nanobotServer.sendToDid("did:anp:test:correlation", message);
       }
 
       // 等待所有消息被接收
@@ -424,12 +444,16 @@ describe("T011: 双向通信测试", () => {
         nanobotClient.once("open", () => resolve());
       });
 
-      // 发送多条消息并测量延迟
+      // Wait for welcome message to be received
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      latencies.length = 0; // Clear timestamps from welcome message
+
+      // 发送多条消息并测量延迟 - client is connected to nanobotPort, so send via nanobotServer
       for (let i = 0; i < iterations; i++) {
         sendTimes.push(Date.now());
 
         const message = createProgressEvent(
-          "did:anp:automaton:main",
+          "did:anp:nanobot:main",
           "did:anp:test:latency",
           {
             taskId: ulid(),
@@ -437,7 +461,7 @@ describe("T011: 双向通信测试", () => {
           }
         );
 
-        automatonServer.sendToDid("did:anp:test:latency", message);
+        nanobotServer.sendToDid("did:anp:test:latency", message);
       }
 
       // 等待所有消息被接收
@@ -478,7 +502,7 @@ describe("T011: 双向通信测试", () => {
       // 发送高负载消息
       for (let i = 0; i < highLoadCount; i++) {
         const message = createProgressEvent(
-          "did:anp:automaton:main",
+          "did:anp:nanobot:main",
           "did:anp:test:load",
           {
             taskId: ulid(),
@@ -486,7 +510,8 @@ describe("T011: 双向通信测试", () => {
           }
         );
 
-        automatonServer.sendToDid("did:anp:test:load", message);
+        // Client is connected to nanobotPort, so send via nanobotServer
+        nanobotServer.sendToDid("did:anp:test:load", message);
       }
 
       // 等待消息处理
@@ -537,7 +562,8 @@ describe("T011: 双向通信测试", () => {
         }
       );
 
-      const sentCount = nanobotServer.broadcast(message);
+      // Clients are connected to automatonPort, so broadcast via automatonServer
+      const sentCount = automatonServer.broadcast(message);
       expect(sentCount).toBe(3);
 
       // 等待消息被接收

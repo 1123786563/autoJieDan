@@ -66,14 +66,14 @@ describe("ANP Adapter", () => {
 
     it("should accept supported protocol version", async () => {
       let acceptMessage: any = null;
-      let establishedEvent: any = null;
+      let negotiatedEvent: any = null;
 
       adapter.once("outbound", (message) => {
         acceptMessage = message;
       });
 
-      adapter.once("protocol-established", (peerDid, protocol) => {
-        establishedEvent = { peerDid, protocol };
+      adapter.once("protocol-negotiated", (peerDid, protocol) => {
+        negotiatedEvent = { peerDid, protocol };
       });
 
       // 模拟接收协议协商消息
@@ -110,9 +110,9 @@ describe("ANP Adapter", () => {
 
       expect(acceptMessage).toBeDefined();
       expect(acceptMessage.type).toBe("ProtocolAccept");
-      expect(establishedEvent).toBeDefined();
-      expect(establishedEvent.peerDid).toBe("did:anp:nanobot:main");
-      expect(establishedEvent.protocol.protocolId).toBe("1.0.0");
+      expect(negotiatedEvent).toBeDefined();
+      expect(negotiatedEvent.peerDid).toBe("did:anp:nanobot:main");
+      expect(negotiatedEvent.protocol.protocolId).toBe("1.0.0");
     });
 
     it("should reject unsupported protocol version", async () => {
@@ -173,10 +173,10 @@ describe("ANP Adapter", () => {
         establishedEvent = { peerDid, protocol };
       });
 
-      // 首先发起协商
-      await adapter.negotiateProtocol("did:anp:nanobot:main");
+      // 首先发起协商，获取实际的 sessionId
+      const actualSessionId = await adapter.negotiateProtocol("did:anp:nanobot:main");
 
-      // 模拟接收接受响应
+      // 模拟接收接受响应，使用实际的 sessionId
       const acceptMessage = {
         "@context": ["https://www.w3.org/ns/activitystreams/v1"],
         "@type": "ANPMessage",
@@ -187,9 +187,9 @@ describe("ANP Adapter", () => {
         type: "ProtocolAccept" as const,
         object: {
           "@type": "anp:ProtocolAccept",
-          "acceptedProtocol": "1.0.0",
-          "acceptedVersion": "1.0.0",
-          "sessionId": "test-session-001",
+          "anp:acceptedProtocol": "1.0.0",
+          "anp:acceptedVersion": "1.0.0",
+          "anp:sessionId": actualSessionId,
         },
         signature: {
           type: "EcdsaSecp256r1Signature2019",
@@ -198,7 +198,7 @@ describe("ANP Adapter", () => {
           proofPurpose: "authentication",
           proofValue: "dummy-signature",
         },
-        correlationId: "test-session-001",
+        correlationId: actualSessionId,
         ttl: 3600,
       };
 
@@ -235,7 +235,7 @@ describe("ANP Adapter", () => {
         type: "ProtocolReject" as const,
         object: {
           "@type": "anp:ProtocolReject",
-          "rejectedReason": "Incompatible capabilities",
+          "anp:rejectedReason": "Incompatible capabilities",
         },
         signature: {
           type: "EcdsaSecp256r1Signature2019",
@@ -374,6 +374,12 @@ describe("ANP Adapter", () => {
         handledMessage = message;
       });
 
+      // 添加错误监听器以捕获签名验证失败
+      let capturedError: any = null;
+      adapter.once("error", (error) => {
+        capturedError = error;
+      });
+
       const message = {
         "@context": ["https://www.w3.org/ns/activitystreams/v1"],
         "@type": "ANPMessage",
@@ -400,8 +406,11 @@ describe("ANP Adapter", () => {
 
       await adapter.handleMessage(message);
 
-      // 注意：由于签名验证会失败，实际不会调用处理器
-      // 这里主要测试路由逻辑
+      // 签名验证失败，错误被捕获
+      expect(capturedError).toBeDefined();
+      expect(capturedError.error).toBe("Invalid signature");
+
+      // 验证处理器已注册
       expect(adapter["messageHandlers"].get("ProgressEvent")).toBeDefined();
     });
 
