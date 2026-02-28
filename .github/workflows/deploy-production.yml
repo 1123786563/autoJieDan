@@ -1,0 +1,180 @@
+# GitHub Actions workflow for production deployment
+name: Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  AUTOMATON_IMAGE: automaton
+  NANOBOT_IMAGE: nanobot
+
+jobs:
+  # =============================================================================
+  # Build and Test
+  # =============================================================================
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: automaton/pnpm-lock.yaml
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.28.1
+
+      - name: Install Automaton dependencies
+        working-directory: ./automaton
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Automaton
+        working-directory: ./automaton
+        run: pnpm build
+
+      - name: Run Automaton tests
+        working-directory: ./automaton
+        run: pnpm test --coverage
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Nanobot dependencies
+        working-directory: ./nanobot
+        run: |
+          pip install uv
+          uv pip install .
+
+      - name: Run Nanobot tests
+        working-directory: ./nanobot
+        run: pytest
+
+  # =============================================================================
+  # Build Docker Images
+  # =============================================================================
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Automaton
+        id: meta-automaton
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.AUTOMATON_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Automaton image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./automaton
+          push: true
+          tags: ${{ steps.meta-automaton.outputs.tags }}
+          labels: ${{ steps.meta-automaton.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract metadata for Nanobot
+        id: meta-nanobot
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ env.NANOBOT_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Nanobot image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./nanobot
+          push: true
+          tags: ${{ steps.meta-nanobot.outputs.tags }}
+          labels: ${{ steps.meta-nanobot.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # =============================================================================
+  # Deploy to Production
+  # =============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-images
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    environment:
+      name: production
+      url: https://autojiedan.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.PRODUCTION_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST }} << 'ENDSSH'
+            cd /opt/autojiedan
+            git fetch --tags
+            git checkout ${{ github.ref_name }}
+            ./deploy.sh restart
+          ENDFSSH
+
+      - name: Health check
+        run: |
+          sleep 30
+          curl -f http://${{ secrets.PRODUCTION_HOST }}:10790/health || exit 1
+          curl -f http://${{ secrets.PRODUCTION_HOST }}:10792/health || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "Deployment successful! Version ${{ github.ref_name }} is now live."

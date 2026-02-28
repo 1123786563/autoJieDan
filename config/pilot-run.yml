@@ -1,0 +1,266 @@
+# =============================================================================
+# Pilot Run Configuration for Upwork Auto-Bidding System
+# =============================================================================
+# This configuration controls the first real-world test run of the automated
+# bidding system on Upwork projects.
+# =============================================================================
+
+version: 1.0
+
+# =============================================================================
+# Pilot Run Settings
+# =============================================================================
+pilot_run:
+  enabled: true
+  mode: "dry_run"  # Options: dry_run, supervised, production
+  name: "First Real Project Trial"
+  started_at: "2026-02-28T00:00:00Z"
+
+# =============================================================================
+# RSS Feed Configuration
+# =============================================================================
+rss_feeds:
+  # Web Development - TypeScript
+  - url: "https://www.upwork.com/ab/feed/jobs/rss?sort=recency&fixedPrice=yes&budget=100-500&skills[]=typescript"
+    name: "TypeScript Projects"
+    enabled: true
+    weight: 1.0
+
+  # Web Development - Python
+  - url: "https://www.upwork.com/ab/feed/jobs/rss?sort=recency&fixedPrice=yes&budget=100-500&skills[]=python"
+    name: "Python Projects"
+    enabled: true
+    weight: 1.0
+
+  # API Development
+  - url: "https://www.upwork.com/ab/feed/jobs/rss?sort=recency&fixedPrice=yes&budget=100-500&category2=web,scraping"
+    name: "API Development"
+    enabled: true
+    weight: 0.8
+
+  # Payment Verified Only
+  - url: "https://www.upwork.com/ab/feed/jobs/rss?sort=recency&fixedPrice=yes&budget=100-500&verifications=payment_verified"
+    name: "Verified Clients"
+    enabled: true
+    weight: 1.2
+
+  poll_interval_seconds: 300  # 5 minutes
+  max_projects_per_poll: 20
+
+# =============================================================================
+# Project Filtering
+# =============================================================================
+project_filters:
+  # Budget constraints
+  min_budget_usd: 100
+  max_budget_usd: 500
+  preferred_budget_usd: 250
+
+  # Client requirements
+  min_client_rating: 4.5
+  min_hire_rate: 50  # percentage
+  min_total_spent_usd: 1000
+  min_jobs_posted: 5
+
+  # Skill matching
+  required_skills:
+    - "typescript"
+    - "python"
+    - "javascript"
+    - "api development"
+    - "web development"
+
+  preferred_skills:
+    - "react"
+    - "node.js"
+    - "fastapi"
+    - "django"
+    - "postgresql"
+
+  excluded_keywords:
+    - "test"
+    - "sample"
+    - "contest"
+    - "free work"
+    - "unpaid"
+    - "internship"
+    - "student project"
+    - "urgent"
+    - "asap"
+
+  # Project preferences
+  preferred_project_types:
+    - "fixed price"
+    - "small project"
+    - "one-time project"
+
+  excluded_project_types:
+    - "hourly"
+    - "long-term"
+    - "ongoing"
+
+# =============================================================================
+# Bidding Strategy
+# =============================================================================
+bidding:
+  # General settings
+  auto_bid_enabled: true
+  bid_approval_required: true  # Require human approval for first run
+  max_bids_per_day: 3
+  max_bids_per_week: 15
+  min_hours_between_bids: 2
+
+  # Match scoring
+  min_match_score: 0.7
+  preferred_match_score: 0.85
+
+  # Pricing strategy
+  strategy: "competitive"  # Options: competitive, premium, budget
+  pricing:
+    fixed_price:
+      margin_below_min: 0.10      # 10% below min budget
+      margin_above_min: 0.15       # 15% above min budget
+      midpoint_preference: 0.6     # Prefer 60% towards midpoint
+
+    quick_delivery_premium: 1.15   # 15% premium for fast delivery
+
+  # Bid quality
+  include_milestones: true
+  include_questions: true
+  max_questions: 3
+  personalization_enabled: true
+
+  # Timing
+  bidding_hours:
+    start: "09:00"
+    end: "17:00"
+    timezone: "UTC"
+  weekend_bidding: false
+
+# =============================================================================
+# Agent Profile
+# =============================================================================
+agent_profile:
+  name: "Automaton AI"
+  title: "Full Stack Developer & AI Specialist"
+  hourly_rate_usd: 50
+  years_experience: 5
+
+  bio: |
+    Experienced full-stack developer specializing in TypeScript, Python,
+    and AI integration. Passionate about building scalable web applications
+    and RESTful APIs. Proven track record of delivering high-quality code
+    on time and within budget.
+
+  expertise_areas:
+    - "TypeScript"
+    - "Python"
+    - "React"
+    - "Node.js"
+    - "API Design"
+    - "PostgreSQL"
+    - "Docker"
+    - "CI/CD"
+
+  portfolio_urls: []
+  github_url: ""
+  linkedin_url: ""
+
+# =============================================================================
+# Monitoring and Alerts
+# =============================================================================
+monitoring:
+  # Logging
+  log_level: "info"
+  log_file: "/var/log/nanobot/pilot-run.log"
+  max_log_size_mb: 100
+  log_retention_days: 30
+
+  # Metrics
+  collect_metrics: true
+  metrics_retention_hours: 720  # 30 days
+
+  # Alerts
+  alert_on_failure: true
+  alert_on_low_balance: true
+  alert_threshold_balance_usd: 100
+  alert_recipients:
+    - type: "email"
+      address: "admin@example.com"
+    - type: "webhook"
+      url: "https://hooks.example.com/alerts"
+
+  # Health checks
+  health_check_interval_seconds: 60
+  health_check_timeout_seconds: 10
+
+# =============================================================================
+# Integration Settings
+# =============================================================================
+integrations:
+  automaton:
+    enabled: true
+    url: "http://automaton:10790"
+    timeout_seconds: 30
+    retry_attempts: 3
+    retry_delay_seconds: 5
+
+  upwork:
+    enabled: true
+    environment: "production"  # Options: sandbox, production
+    api_version: "v3"
+    timeout_seconds: 15
+    rate_limit_buffer: 5  # Stop 5 requests before limit
+
+# =============================================================================
+# Safety Limits
+# =============================================================================
+safety:
+  # Maximum daily spend
+  max_daily_spend_usd: 1000
+
+  # Maximum active bids
+  max_active_bids: 50
+
+  # Emergency stop
+  emergency_stop_enabled: true
+  emergency_stop_triggers:
+    - "account_suspended"
+    - "api_error_rate_above_50_percent"
+    - "bid_error_rate_above_20_percent"
+
+  # Rollback
+  auto_rollback_on_error: false
+  max_consecutive_errors: 10
+
+# =============================================================================
+# Reporting
+# =============================================================================
+reporting:
+  # Daily summary
+  daily_summary_enabled: true
+  daily_summary_time: "18:00"
+  daily_summary_timezone: "UTC"
+
+  # Weekly report
+  weekly_report_enabled: true
+  weekly_report_day: "friday"
+
+  # Report recipients
+  recipients:
+    - type: "email"
+      address: "admin@example.com"
+      format: "html"
+
+  # Metrics to include
+  metrics:
+    - "projects_discovered"
+    - "projects_matched"
+    - "bids_submitted"
+    - "bids_accepted"
+    - "client_responses"
+    - "interviews_scheduled"
+    - "projects_hired"
+    - "revenue_earned"
+    - "success_rate"
+    - "average_response_time"

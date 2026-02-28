@@ -253,11 +253,69 @@ Before deploying nanobot:
 
 ## Updates
 
-**Last Updated**: 2026-02-03
+**Last Updated**: 2026-02-28
 
 For the latest security updates and announcements, check:
 - GitHub Security Advisories: https://github.com/HKUDS/nanobot/security/advisories
 - Release Notes: https://github.com/HKUDS/nanobot/releases
+
+---
+
+## Dependency Vulnerabilities (2026-02-28)
+
+Found **11 known vulnerabilities** in **6 packages** via `pip-audit`.
+
+### Summary
+
+| Status | Count | Packages |
+|--------|-------|----------|
+| Fix Not on PyPI | 2 | torch, text-generation |
+| No Fix Available | 4 | ecdsa, diskcache, biopython, py |
+| Fixed | 1 | pypdf (replaces pypdf2) |
+
+### Vulnerable Packages (Fix Not Available on PyPI)
+
+| Package | Version | CVE | Fix Version | Status |
+|---------|---------|-----|-------------|--------|
+| torch | 2.2.2 | PYSEC-2025-41, PYSEC-2024-259, CVE-2025-2953, CVE-2025-3730 | 2.6.0+, 2.8.0 | PyPI latest: 2.2.2 |
+| text-generation | 0.7.0 | CVE-2024-3924, CVE-2026-0599 | 2.0.0, 3.3.7 | PyPI latest: 0.7.0 |
+
+### No Fix Available
+
+| Package | Version | CVE | Required By | Notes |
+|---------|---------|-----|-------------|-------|
+| ecdsa | 0.19.1 | CVE-2024-23342 | python-jose | JWT signing |
+| diskcache | 5.6.3 | CVE-2025-69872 | qianfan | Caching |
+| biopython | 1.86 | CVE-2025-68463 | bio | Bioinformatics |
+| py | 1.11.0 | PYSEC-2022-42969 | retry | Testing utility |
+
+### Fixed Vulnerabilities
+
+| Package | Fixed Version | CVE |
+|---------|--------------|-----|
+| pypdf | 6.7.3 (installed) | CVE-2023-36464 (replaces vulnerable pypdf2 3.0.1) |
+
+### Remediation Actions
+
+1. **Monitor for updates**: Check PyPI regularly for new versions of torch and text-generation with security fixes.
+
+2. **Consider alternatives**:
+   - For text-generation: Evaluate if huggingface_hub can replace this dependency
+   - For ecdsa: Monitor python-jose for updates
+
+3. **Apply mitigations**:
+   - Run in isolated environments (containers, VMs)
+   - Limit network access for vulnerable components
+   - Monitor for exploitation attempts
+
+### Skip Reasons (Non-PyPI Packages)
+
+The following packages are not on PyPI and cannot be audited:
+- ai-agent-swarm (0.1.0)
+- github-agent-system (0.1.0)
+- graspologic (0.1.dev847+g38e680cab)
+- psycho-consultation (0.1.0)
+- ragflow (0.22.1)
 
 ## License
 
