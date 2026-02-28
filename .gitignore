@@ -28,3 +28,4 @@ dist/
 .benchmarks/
 .vscode/
 coverage/
+.claude/
