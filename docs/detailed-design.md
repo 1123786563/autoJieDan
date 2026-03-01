@@ -707,6 +707,25 @@ CREATE INDEX idx_knowledge_entries_type ON knowledge_entries(type);
 CREATE INDEX idx_knowledge_entries_category ON knowledge_entries(category);
 
 -- -------------------------------------------------------------------------
+-- embedding_queue: 嵌入任务队列表 (Phase 2)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS embedding_queue (
+    id TEXT PRIMARY KEY,                    -- ULID
+    knowledge_entry_id TEXT NOT NULL,       -- 关联的知识条目
+    content TEXT NOT NULL,                  -- 待嵌入内容
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'processing', 'completed', 'failed'
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    error TEXT,                             -- 错误信息
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (knowledge_entry_id) REFERENCES knowledge_entries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_embedding_queue_status ON embedding_queue(status);
+CREATE INDEX idx_embedding_queue_created ON embedding_queue(created_at);
+
+-- -------------------------------------------------------------------------
 -- project_milestones: 项目里程碑表
 -- -------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS project_milestones (
@@ -2123,7 +2142,447 @@ function storeIdempotentResult(
 }
 ```
 
-### 3.6 错误码规范
+### 3.6 双层记忆系统接口 (Phase 1定义, Phase 2实现)
+
+#### 3.6.1 记忆架构概览
+
+双层记忆系统为AI代理提供持久化记忆能力，支持短期和长期记忆的分层管理。
+
+| 记忆类型 | 存储位置 | 用途 | 实现Phase |
+|---------|---------|------|-----------|
+| 短期记忆 | `~/.nanobot/notes/YYYY-MM-DD.md` | 每日笔记，临时想法，待办事项 | Phase 2 |
+| 长期记忆 | SQLite `knowledge_entries` 表 | 主题化知识库，持久化存储 | Phase 2 |
+
+**Phase 1**: 仅定义ANP接口规范，不实现具体存储逻辑
+**Phase 2**: 实现笔记写入/检索功能，向量化功能延后至Phase 3
+
+#### 3.6.2 ANP对接设计
+
+Nanobot通过ANP消息委托Automaton操作数据库，实现跨系统记忆管理。
+
+| ANP消息类型 | 方向 | 用途 | Phase |
+|------------|------|------|-------|
+| MemoryWriteRequest | Nanobot→Automaton | 写入笔记/知识条目 | Phase 2 |
+| MemoryQueryRequest | Nanobot→Automaton | 检索历史记忆 | Phase 2 |
+| MemoryQueryResponse | Automaton→Nanobot | 返回检索结果 | Phase 2 |
+
+```typescript
+/**
+ * 记忆写入请求
+ */
+interface MemoryWriteRequest {
+  type: 'MemoryWriteRequest';
+  id: string;
+  timestamp: string;
+  sender: string;  // Nanobot DID
+  payload: {
+    category: 'note' | 'knowledge';
+    content: string;
+    project?: string;    // 关联项目ID
+    tags?: string[];     // 标签用于检索
+    metadata?: Record<string, unknown>;
+  };
+}
+
+/**
+ * 记忆检索请求
+ */
+interface MemoryQueryRequest {
+  type: 'MemoryQueryRequest';
+  id: string;
+  timestamp: string;
+  sender: string;
+  payload: {
+    query: string;
+    category?: 'note' | 'knowledge' | 'all';
+    dateRange?: {
+      start: string;  // ISO 8601
+      end: string;
+    };
+    tags?: string[];
+    project?: string;
+    limit?: number;   // 默认10
+  };
+}
+
+/**
+ * 记忆检索响应
+ */
+interface MemoryQueryResponse {
+  type: 'MemoryQueryResponse';
+  id: string;
+  timestamp: string;
+  inReplyTo: string;  // 对应的MemoryQueryRequest.id
+  payload: {
+    results: Array<{
+      id: string;
+      category: 'note' | 'knowledge';
+      content: string;
+      timestamp: string;
+      project?: string;
+      tags?: string[];
+      relevanceScore?: number;  // Phase 3 向量检索时使用
+    }>;
+    total: number;
+    hasMore: boolean;
+  };
+}
+```
+
+#### 3.6.3 短期记忆格式
+
+短期记忆使用Markdown文件存储，采用front matter格式便于解析。
+
+```markdown
+---
+date: 2026-03-01
+project: autoJieDan
+tags: [design, memory-system]
+created_at: 2026-03-01T10:30:00Z
+---
+
+# 每日笔记 - 2026-03-01
+
+## 设计讨论
+- 确定双层记忆系统架构
+- ANP消息类型定义完成
+
+## 待办事项
+- [ ] 实现MemoryWriteRequest处理器
+- [ ] 编写单元测试
+
+## 临时想法
+考虑使用向量数据库优化语义检索...
+```
+
+**文件命名规范**:
+- 路径: `~/.nanobot/notes/YYYY-MM-DD.md`
+- 编码: UTF-8
+- 权限: 0600 (仅用户可读写)
+
+#### 3.6.4 长期记忆数据结构
+
+长期记忆复用现有 `knowledge_entries` 表结构。
+
+```sql
+-- 知识条目表 (复用现有结构)
+CREATE TABLE IF NOT EXISTS knowledge_entries (
+  id TEXT PRIMARY KEY,
+  category TEXT NOT NULL,          -- 'note' | 'knowledge'
+  content TEXT NOT NULL,
+  project TEXT,
+  tags TEXT,                       -- JSON数组
+  metadata TEXT,                   -- JSON对象
+  embedding BLOB,                  -- 向量嵌入 (Phase 3)
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- 索引优化
+CREATE INDEX IF NOT EXISTS idx_knowledge_category
+  ON knowledge_entries(category);
+CREATE INDEX IF NOT EXISTS idx_knowledge_project
+  ON knowledge_entries(project);
+CREATE INDEX IF NOT EXISTS idx_knowledge_created_at
+  ON knowledge_entries(created_at);
+```
+
+#### 3.6.5 记忆检索接口定义
+
+```typescript
+/**
+ * 记忆管理器接口 (Phase 2实现)
+ */
+interface MemoryManager {
+  /**
+   * 写入记忆
+   */
+  write(request: MemoryWriteRequest): Promise<{ success: boolean; id: string }>;
+
+  /**
+   * 检索记忆
+   */
+  query(request: MemoryQueryRequest): Promise<MemoryQueryResponse['payload']>;
+
+  /**
+   * 按日期范围检索笔记
+   */
+  getNotesByDateRange(start: Date, end: Date): Promise<NoteEntry[]>;
+
+  /**
+   * 按标签检索
+   */
+  getByTags(tags: string[], matchAll?: boolean): Promise<KnowledgeEntry[]>;
+
+  /**
+   * 归档旧笔记到长期记忆
+   */
+  archiveToLongTerm(noteId: string): Promise<void>;
+}
+
+/**
+ * 笔记条目类型
+ */
+interface NoteEntry {
+  id: string;
+  date: string;
+  content: string;
+  project?: string;
+  tags: string[];
+  createdAt: Date;
+}
+
+/**
+ * 知识条目类型
+ */
+interface KnowledgeEntry {
+  id: string;
+  category: 'note' | 'knowledge';
+  content: string;
+  project?: string;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+#### 3.6.6 自动归档机制 (Phase 2实现)
+
+系统自动将超过7天的短期记忆归档到长期记忆库。
+
+```typescript
+/**
+ * 归档配置
+ */
+const ARCHIVE_CONFIG = {
+  noteRetentionDays: 7,      // 短期记忆保留天数
+  archiveSchedule: '0 3 * * *',  // 每天凌晨3点执行
+  batchSize: 100,            // 批量处理大小
+};
+
+/**
+ * 归档处理器
+ */
+async function archiveOldNotes(): Promise<void> {
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - ARCHIVE_CONFIG.noteRetentionDays);
+
+  // 1. 扫描过期笔记文件
+  const oldNotes = await scanNotesOlderThan(cutoffDate);
+
+  // 2. 批量转换为知识条目
+  for (const batch of chunk(oldNotes, ARCHIVE_CONFIG.batchSize)) {
+    await Promise.all(
+      batch.map(note => convertToKnowledgeEntry(note))
+    );
+  }
+
+  // 3. 清理已归档的笔记文件
+  await cleanupArchivedNotes(oldNotes.map(n => n.path));
+}
+```
+
+### 3.7 知识库向量化检索 (Phase 2)
+
+#### 3.7.1 向量嵌入生成
+- 模型: text-embedding-3-small (OpenAI)
+- 维度: 1536
+- 批处理大小: 10
+
+#### 3.7.2 向量数据库选型
+
+| 方案 | 优势 | 劣势 | Phase |
+|------|------|------|-------|
+| SQLite + 扩展 | 无额外依赖 | 性能受限 | Phase 2 |
+| 独立向量DB (Qdrant) | 性能好 | 增加基础设施 | Phase 3 |
+
+**推荐**: Phase 2使用sqlite-vss扩展，Phase 3评估Qdrant
+
+#### 3.7.3 相似度计算
+- 算法: 余弦相似度
+- 阈值: 0.75
+
+#### 3.7.4 检索API设计
+
+```typescript
+/**
+ * 向量检索请求
+ */
+interface VectorSearchRequest {
+  query: string;                    // 查询文本
+  topK: number;                     // 返回结果数量 (默认: 10)
+  threshold: number;                // 相似度阈值 (默认: 0.75)
+  filters?: Record<string, unknown>; // 可选过滤条件
+}
+
+/**
+ * 向量检索响应
+ */
+interface VectorSearchResponse {
+  results: Array<{
+    id: string;
+    content: string;
+    score: number;                  // 相似度分数 (0-1)
+    metadata?: Record<string, unknown>;
+  }>;
+  total: number;
+  queryTime: number;                // 查询耗时(ms)
+}
+
+/**
+ * 向量存储管理接口
+ */
+interface VectorStore {
+  /**
+   * 添加向量
+   */
+  upsert(id: string, embedding: number[], metadata?: Record<string, unknown>): Promise<void>;
+
+  /**
+   * 批量添加向量
+   */
+  upsertBatch(entries: Array<{ id: string; embedding: number[]; metadata?: Record<string, unknown> }>): Promise<void>;
+
+  /**
+   * 相似度搜索
+   */
+  search(request: VectorSearchRequest): Promise<VectorSearchResponse>;
+
+  /**
+   * 删除向量
+   */
+  delete(id: string): Promise<void>;
+
+  /**
+   * 获取向量数量
+   */
+  count(): Promise<number>;
+}
+
+/**
+ * 嵌入生成器接口
+ */
+interface EmbeddingGenerator {
+  /**
+   * 生成单个文本的嵌入向量
+   */
+  embed(text: string): Promise<number[]>;
+
+  /**
+   * 批量生成嵌入向量
+   */
+  embedBatch(texts: string[]): Promise<number[][]>;
+
+  /**
+   * 获取嵌入维度
+   */
+  getDimension(): number;
+}
+```
+
+#### 3.7.5 增量更新策略
+
+**嵌入队列数据结构**:
+
+```typescript
+/**
+ * 嵌入任务队列项
+ */
+interface EmbeddingQueueItem {
+  id: string;
+  knowledgeEntryId: string;
+  content: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  retryCount: number;
+  maxRetries: number;
+  createdAt: Date;
+  updatedAt: Date;
+  error?: string;
+}
+
+/**
+ * 嵌入队列配置
+ */
+const EMBEDDING_QUEUE_CONFIG = {
+  maxRetries: 3,                    // 最大重试次数
+  batchSize: 10,                    // 批处理大小
+  baseDelayMs: 1000,                // 初始退避延迟
+  maxDelayMs: 30000,                // 最大退避延迟
+  processingIntervalMs: 5000,       // 队列处理间隔
+};
+
+/**
+ * 指数退避重试策略
+ */
+function calculateBackoffDelay(retryCount: number): number {
+  const delay = Math.min(
+    EMBEDDING_QUEUE_CONFIG.baseDelayMs * Math.pow(2, retryCount),
+    EMBEDDING_QUEUE_CONFIG.maxDelayMs
+  );
+  return delay + Math.random() * 1000; // 添加抖动
+}
+
+/**
+ * 嵌入队列处理器
+ */
+async function processEmbeddingQueue(): Promise<void> {
+  const pendingItems = await db.query<EmbeddingQueueItem>(`
+    SELECT * FROM embedding_queue
+    WHERE status IN ('pending', 'failed')
+      AND retry_count < ?
+    ORDER BY created_at ASC
+    LIMIT ?
+  `, [EMBEDDING_QUEUE_CONFIG.maxRetries, EMBEDDING_QUEUE_CONFIG.batchSize]);
+
+  for (const item of pendingItems) {
+    try {
+      // 1. 生成嵌入
+      const embedding = await embeddingGenerator.embed(item.content);
+
+      // 2. 存储向量
+      await vectorStore.upsert(item.knowledgeEntryId, embedding, {
+        entryId: item.knowledgeEntryId,
+      });
+
+      // 3. 更新状态
+      await db.execute(`
+        UPDATE embedding_queue
+        SET status = 'completed', updated_at = datetime('now')
+        WHERE id = ?
+      `, [item.id]);
+
+    } catch (error) {
+      // 4. 处理失败
+      const newRetryCount = item.retryCount + 1;
+      const status = newRetryCount >= EMBEDDING_QUEUE_CONFIG.maxRetries
+        ? 'failed'
+        : 'pending';
+
+      await db.execute(`
+        UPDATE embedding_queue
+        SET status = ?, retry_count = ?, error = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `, [status, newRetryCount, error.message, item.id]);
+
+      // 5. 调度重试
+      if (status === 'pending') {
+        const delay = calculateBackoffDelay(newRetryCount);
+        await scheduleRetry(item.id, delay);
+      }
+    }
+  }
+}
+```
+
+**新条目自动嵌入流程**:
+
+1. 新知识条目写入 `knowledge_entries` 表
+2. 触发器自动插入 `embedding_queue` 表 (status=pending)
+3. 后台队列处理器定期消费队列
+4. 成功后更新 `knowledge_entries.embedding` 字段
+
+### 3.8 错误码规范
 
 ```typescript
 /**
@@ -3334,6 +3793,48 @@ groups:
           summary: "Low bid acceptance rate"
           description: "Acceptance rate is {{ $value }}"
 ```
+
+#### 5.4.4 埋点事件采集流程 (Phase 1)
+
+##### 5.4.4.1 采集时机表
+
+| 事件类型 | 触发时机 | 采集方式 | 优先级 |
+|----------|----------|----------|--------|
+| project_viewed | 项目出现在搜索结果 | 自动 | P0 |
+| project_scored | 评分完成 | 自动 | P0 |
+| bid_created | 投标创建 | 自动 | P0 |
+| bid_submitted | 投标提交成功 | 自动 | P0 |
+| interview_invited | 收到面试邀请 | 自动 | P0 |
+| contract_signed | 合同签署完成 | 自动 | P0 |
+| llm_call | LLM调用完成 | 自动 | P0 |
+| error_occurred | 错误发生 | 自动 | P0 |
+| manual_intervention | 人工介入触发 | 自动 | P1 |
+| customer_message | 客户消息收发 | 自动 | P1 |
+
+##### 5.4.4.2 批处理策略
+
+```typescript
+const batchConfig = {
+  maxSize: 100,           // 最大批次大小
+  maxWaitMs: 5000,        // 最大等待时间
+  retryAttempts: 3,       // 重试次数
+  retryDelayMs: 1000,     // 重试延迟
+};
+```
+
+##### 5.4.4.3 隐私合规处理
+
+| 数据类型 | 处理方式 | 说明 |
+|----------|----------|------|
+| 客户PII | 脱敏存储 | 姓名、邮箱哈希化 |
+| 项目详情 | 敏感词过滤 | 移除可能的敏感信息 |
+| IP地址 | 截断存储 | 保留前3段 |
+
+##### 5.4.4.4 数据归档规则
+
+- 热数据: 7天 (内存缓存)
+- 温数据: 90天 (SQLite)
+- 冷数据: 1年 (压缩归档)
 
 ### 5.5 扩展性设计
 
