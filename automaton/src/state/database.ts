@@ -45,6 +45,13 @@ import {
   MIGRATION_V9,
   MIGRATION_V9_ALTER_CHILDREN_ROLE,
   MIGRATION_V10,
+  MIGRATION_V11,
+  MIGRATION_V11_ALTER_GOALS_PROJECT_ID,
+  MIGRATION_V11_ALTER_GOALS_SOURCE,
+  MIGRATION_V11_ALTER_GOALS_GENESIS_PROMPT_ID,
+  MIGRATION_V11_ALTER_GOALS_RESOURCE_LIMIT,
+  MIGRATION_V11_ALTER_GOALS_ACTUAL_COST,
+  MIGRATION_V11_INDEX_GOALS,
 } from "./schema.js";
 import type {
   RiskLevel,
@@ -623,6 +630,19 @@ function applyMigrations(db: DatabaseType): void {
     {
       version: 10,
       apply: () => db.exec(MIGRATION_V10),
+    },
+    {
+      version: 11,
+      apply: () => {
+        db.exec(MIGRATION_V11);
+        // Goals表扩展列 (ALTER TABLE must be separate for SQLite)
+        try { db.exec(MIGRATION_V11_ALTER_GOALS_PROJECT_ID); } catch { /* column may already exist */ }
+        try { db.exec(MIGRATION_V11_ALTER_GOALS_SOURCE); } catch { /* column may already exist */ }
+        try { db.exec(MIGRATION_V11_ALTER_GOALS_GENESIS_PROMPT_ID); } catch { /* column may already exist */ }
+        try { db.exec(MIGRATION_V11_ALTER_GOALS_RESOURCE_LIMIT); } catch { /* column may already exist */ }
+        try { db.exec(MIGRATION_V11_ALTER_GOALS_ACTUAL_COST); } catch { /* column may already exist */ }
+        try { db.exec(MIGRATION_V11_INDEX_GOALS); } catch { /* index may already exist */ }
+      },
     },
   ];
 

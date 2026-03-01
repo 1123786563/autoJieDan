@@ -5,7 +5,7 @@
  * The database IS the automaton's memory.
  */
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const CREATE_TABLES = `
   -- Schema version tracking
@@ -670,4 +670,227 @@ export const MIGRATION_V10 = `
 
   CREATE INDEX idx_knowledge_category ON knowledge_store(category);
   CREATE INDEX idx_knowledge_key ON knowledge_store(key);
+`;
+
+// === Phase 1A: AutoJieDan MVP - Project Management Tables ===
+
+export const MIGRATION_V11 = `
+  -- Schema version: 11
+  -- Tables: projects, clients, bid_history, manual_interventions,
+  --          analytics_events, message_buffer, resource_allocations, project_milestones
+
+  -- -------------------------------------------------------------------------
+  -- clients: 客户信息表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS clients (
+    id TEXT PRIMARY KEY,                    -- ULID
+    platform TEXT NOT NULL,                 -- 'upwork', 'fiverr', etc.
+    platform_client_id TEXT NOT NULL,       -- 平台原始客户ID
+    name TEXT,
+    company TEXT,
+    rating REAL,                            -- 历史评分 (1-5)
+    total_spent_cents INTEGER DEFAULT 0,    -- 累计消费
+    payment_verified INTEGER DEFAULT 0,     -- 付款验证率 (0-100)
+    country TEXT,
+    tier TEXT DEFAULT 'new',                -- 客户等级: 'gold', 'silver', 'bronze', 'new'
+    language_preference TEXT DEFAULT 'en',  -- 'en', 'zh', 'auto'
+    response_time_hours REAL,               -- 平均响应时间 (小时)
+    total_projects INTEGER DEFAULT 0,       -- 累计项目数
+    hired_freelancers INTEGER DEFAULT 0,    -- 雇佣过的自由职业者数量
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata TEXT                           -- JSON扩展
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_platform_id ON clients(platform, platform_client_id);
+  CREATE INDEX IF NOT EXISTS idx_clients_tier ON clients(tier);
+  CREATE INDEX IF NOT EXISTS idx_clients_rating ON clients(rating);
+
+  -- -------------------------------------------------------------------------
+  -- projects: 项目详情表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,                    -- ULID
+    platform TEXT NOT NULL,                 -- 'upwork', 'fiverr', etc.
+    platform_project_id TEXT NOT NULL,      -- 平台原始项目ID
+    title TEXT NOT NULL,
+    description TEXT,
+    client_id TEXT,                         -- 关联clients表
+    status TEXT NOT NULL,                   -- discovered|scored|filtered|bidding|deferred|rejected|negotiating|contracted|pending_start|active|paused|completed|disputed|resolved|escalated|cancelled|closed
+    score INTEGER,                          -- ICP评分 (0-100)
+    score_factors TEXT,                     -- JSON: 评分因子详情
+    bid_id TEXT,                            -- 已提交的投标ID
+    contract_id TEXT,                       -- 已签署的合同ID
+    budget_cents INTEGER,                   -- 项目预算 (分)
+    deadline TEXT,                          -- ISO 8601
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    metadata TEXT,                          -- JSON扩展
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_platform_id ON projects(platform, platform_project_id);
+  CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+  CREATE INDEX IF NOT EXISTS idx_projects_score ON projects(score);
+  CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
+  CREATE INDEX IF NOT EXISTS idx_projects_created_at ON projects(created_at);
+
+  -- -------------------------------------------------------------------------
+  -- bid_history: 投标历史表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS bid_history (
+    id TEXT PRIMARY KEY,                    -- ULID
+    project_id TEXT NOT NULL,
+    template_id TEXT,
+    cover_letter TEXT NOT NULL,
+    bid_amount_cents INTEGER,
+    duration_days INTEGER,
+    submitted_at TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',   -- draft|submitted|accepted|rejected|withdrawn
+    interview_invited INTEGER DEFAULT 0,
+    response_received_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_bid_history_project_id ON bid_history(project_id);
+  CREATE INDEX IF NOT EXISTS idx_bid_history_status ON bid_history(status);
+
+  -- -------------------------------------------------------------------------
+  -- manual_interventions: 人工介入记录表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS manual_interventions (
+    id TEXT PRIMARY KEY,                    -- ULID
+    intervention_type TEXT NOT NULL,        -- contract_sign|large_spend|project_start|refund|dispute_l2|dispute_l3|quality_review|customer_complaint
+    project_id TEXT,
+    goal_id TEXT,
+    reason TEXT NOT NULL,
+    context TEXT,                           -- JSON: 上下文信息
+    status TEXT NOT NULL DEFAULT 'pending', -- pending|approved|rejected|timeout
+    requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+    responded_at TEXT,
+    responder TEXT,
+    decision TEXT,                          -- approve|reject|timeout_action
+    notes TEXT,
+    sla_deadline TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_manual_interventions_type ON manual_interventions(intervention_type);
+  CREATE INDEX IF NOT EXISTS idx_manual_interventions_status ON manual_interventions(status);
+  CREATE INDEX IF NOT EXISTS idx_manual_interventions_project_id ON manual_interventions(project_id);
+
+  -- -------------------------------------------------------------------------
+  -- analytics_events: 埋点事件表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS analytics_events (
+    id TEXT PRIMARY KEY,                    -- ULID
+    event_type TEXT NOT NULL,               -- project_viewed|project_scored|project_filtered|bid_created|bid_submitted|interview_invited|contract_signed|project_started|milestone_completed|project_completed|review_received|dispute_opened|llm_call|error_occurred|manual_intervention|customer_message|repeat_contract
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    properties TEXT,                        -- JSON: 事件属性
+    session_id TEXT,
+    project_id TEXT,
+    client_id TEXT,
+    user_id TEXT,                           -- 内部用户ID
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_timestamp ON analytics_events(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_project_id ON analytics_events(project_id);
+  CREATE INDEX IF NOT EXISTS idx_analytics_events_session_id ON analytics_events(session_id);
+
+  -- -------------------------------------------------------------------------
+  -- message_buffer: WebSocket消息持久化（用于重连状态同步）
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS message_buffer (
+    id TEXT PRIMARY KEY,                    -- ULID
+    connection_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    type TEXT NOT NULL,                     -- GenesisPrompt|ProgressReport|ErrorReport
+    payload TEXT NOT NULL,                  -- JSON: 完整消息
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL                -- TTL过期时间
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_buffer_connection ON message_buffer(connection_id, sequence);
+  CREATE INDEX IF NOT EXISTS idx_message_buffer_expires ON message_buffer(expires_at);
+
+  -- -------------------------------------------------------------------------
+  -- resource_allocations: 资源分配表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS resource_allocations (
+    id TEXT PRIMARY KEY,                    -- ULID
+    project_id TEXT NOT NULL,
+    goal_id TEXT NOT NULL,
+    priority TEXT NOT NULL,                 -- P0|P1|P2|P3
+    cpu_quota REAL,                         -- CPU核心数配额
+    token_quota_hour INTEGER,               -- 每小时token配额
+    cost_quota_cents INTEGER,               -- 成本配额
+    allocated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+    FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_resource_allocations_project_id ON resource_allocations(project_id);
+  CREATE INDEX IF NOT EXISTS idx_resource_allocations_priority ON resource_allocations(priority);
+
+  -- -------------------------------------------------------------------------
+  -- project_milestones: 项目里程碑表
+  -- -------------------------------------------------------------------------
+  CREATE TABLE IF NOT EXISTS project_milestones (
+    id TEXT PRIMARY KEY,                    -- ULID
+    project_id TEXT NOT NULL,
+    goal_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    percentage INTEGER NOT NULL,            -- 付款百分比
+    due_date TEXT,
+    status TEXT NOT NULL DEFAULT 'pending', -- pending|in_progress|completed|skipped
+    completed_at TEXT,
+    delivered_at TEXT,
+    approved_at TEXT,
+    amount_cents INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL,
+    FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_milestones_project_id ON project_milestones(project_id);
+  CREATE INDEX IF NOT EXISTS idx_milestones_status ON project_milestones(status);
+`;
+
+// Goals表扩展列 (ALTER TABLE must be separate for SQLite)
+export const MIGRATION_V11_ALTER_GOALS_PROJECT_ID = `
+  ALTER TABLE goals ADD COLUMN project_id TEXT REFERENCES projects(id);
+`;
+
+export const MIGRATION_V11_ALTER_GOALS_SOURCE = `
+  ALTER TABLE goals ADD COLUMN source TEXT DEFAULT 'internal';
+`;
+
+export const MIGRATION_V11_ALTER_GOALS_GENESIS_PROMPT_ID = `
+  ALTER TABLE goals ADD COLUMN genesis_prompt_id TEXT;
+`;
+
+export const MIGRATION_V11_ALTER_GOALS_RESOURCE_LIMIT = `
+  ALTER TABLE goals ADD COLUMN resource_limit_cents INTEGER DEFAULT 0;
+`;
+
+export const MIGRATION_V11_ALTER_GOALS_ACTUAL_COST = `
+  ALTER TABLE goals ADD COLUMN actual_cost_cents INTEGER DEFAULT 0;
+`;
+
+// Goals表新增索引
+export const MIGRATION_V11_INDEX_GOALS = `
+  CREATE INDEX IF NOT EXISTS idx_goals_project_id ON goals(project_id);
+  CREATE INDEX IF NOT EXISTS idx_goals_source ON goals(source);
 `;
