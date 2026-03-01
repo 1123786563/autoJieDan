@@ -606,18 +606,20 @@ class WebSocketConnectionPool:
         Args:
             conn_id: 连接 ID
         """
-        if conn_id not in self._connections:
-            return
+        async with self._lock:
+            if conn_id not in self._connections:
+                return
 
-        conn = self._connections[conn_id]
+            conn = self._connections[conn_id]
 
-        try:
-            await conn.ws.close()
-        except Exception:
-            pass
+            try:
+                await conn.ws.close()
+            except Exception:
+                pass
 
-        del self._connections[conn_id]
-        logger.debug(f"Closed connection: {conn_id}")
+            # 安全删除，使用 pop 避免 KeyError
+            self._connections.pop(conn_id, None)
+            logger.debug(f"Closed connection: {conn_id}")
 
     def _is_connection_healthy(self, conn: PooledConnection) -> bool:
         """
