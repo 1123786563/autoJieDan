@@ -19,7 +19,8 @@ __pycache__/
 poetry.lock
 .pytest_cache/
 botpy.log
-tests/
+# tests/ removed - test source files should be versioned
+# Test caches are covered by: .pytest_cache/, coverage/, __pycache__/
 node_modules/
 dist/
 .env
