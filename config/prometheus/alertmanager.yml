@@ -1,0 +1,141 @@
+# AlertManager Configuration for AutoJieDan
+# Phase 1F-02: Alerting Configuration
+
+# Global configuration
+global:
+  resolve_timeout: 5m
+  # SMTP configuration for email alerts
+  smtp_smarthost: '${SMTP_SERVER:-smtp.gmail.com}:587'
+  smtp_from: '${SMTP_FROM:-alerts@autojiedan.local}'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+# Template files for custom message formats
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Alert receivers
+receivers:
+  # Telegram receiver for all alerts
+  - name: 'telegram'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        api_url: '${TELEGRAM_API_URL:-https://api.telegram.org}'
+        chat_id: '${TELEGRAM_CHAT_ID}'
+        parse_mode: 'HTML'
+        message: |
+          {{ range .Alerts }}
+          <b>{{ .Labels.alertname }}</b> ({{ .Labels.severity }})
+          {{ .Annotations.description }}
+          <i>Started at {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</i>
+          {{ end }}
+
+  # Email receiver for critical alerts only
+  - name: 'email'
+    email_configs:
+      - to: '${ALERT_EMAIL_TO:-admin@example.com}'
+        from: '${SMTP_FROM:-alerts@autojiedan.local}'
+        smarthost: '${SMTP_SERVER:-smtp.gmail.com}:587'
+        auth_username: '${SMTP_USERNAME}'
+        auth_password: '${SMTP_PASSWORD}'
+        headers:
+          Subject: '[AutoJieDan Alert] {{ .GroupLabels.alertname }} - {{ .GroupLabels.severity }}'
+        html: |
+          {{ range .Alerts }}
+          <h2>{{ .Labels.alertname }} ({{ .Labels.severity }})</h2>
+          <p><strong>Category:</strong> {{ .Labels.category }}</p>
+          <p><strong>Summary:</strong> {{ .Annotations.summary }}</p>
+          <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+          <p><strong>Started:</strong> {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}</p>
+          {{ if .EndsAt }}<p><strong>Ended:</strong> {{ .EndsAt.Format "2006-01-02 15:04:05 MST" }}</p>{{ end }}
+          <hr>
+          {{ end }}
+
+  # Webhook receiver for future integrations (Slack, Discord, etc.)
+  - name: 'webhook'
+    webhook_configs:
+      - url: '${WEBHOOK_URL:-http://localhost:8080/webhook/alerts}'
+        send_resolved: true
+
+# Routing configuration
+route:
+  # Default receiver
+  receiver: 'telegram'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity', 'category']
+
+  # Wait time before sending first notification for a new group
+  group_wait: 10s
+
+  # Wait time before sending notification about new alerts for an existing group
+  group_interval: 5m
+
+  # Wait time before re-sending a notification after it has been sent
+  repeat_interval: 12h
+
+  # Child routes with specific matching rules
+  routes:
+    # Critical alerts go to both Telegram and Email
+    - match:
+        severity: critical
+      receiver: 'telegram'
+      continue: true
+
+    - match:
+        severity: critical
+      receiver: 'email'
+      group_wait: 0s
+      repeat_interval: 30m
+
+    # Cost alerts always go to Telegram and Email
+    - match:
+        category: cost
+      receiver: 'telegram'
+      continue: true
+
+    - match:
+        category: cost
+      receiver: 'email'
+
+    # Business alerts go to Telegram only
+    - match:
+        category: business
+      receiver: 'telegram'
+      group_interval: 1h
+      repeat_interval: 24h
+
+    # Technical/performance alerts go to Telegram
+    - match:
+        category: performance
+      receiver: 'telegram'
+      group_wait: 5m
+      repeat_interval: 30m
+
+    # System health alerts
+    - match:
+        category: system
+      receiver: 'telegram'
+      continue: true
+
+    - match:
+        category: system
+        severity: critical
+      receiver: 'email'
+
+# Inhibition rules to suppress certain alerts
+inhibit_rules:
+  # Inhibit warning if critical is firing for the same alert
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'category']
+
+  # Inhibit latency critical if WebSocket is disconnected
+  - source_match:
+      alertname: 'WebSocketDisconnect'
+    target_match_re:
+      alertname: '.*Latency.*'
+    equal: ['instance']

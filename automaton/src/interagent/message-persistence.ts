@@ -35,6 +35,14 @@ export interface PersistedMessage {
   expiresAt: Date;
 }
 
+/** 消息持久化配置 */
+export interface MessagePersistenceConfig {
+  /** 是否持久化 */
+  persist: boolean;
+  /** TTL (小时) */
+  ttl: number;
+}
+
 /** 重连请求 */
 export interface ReconnectRequest {
   /** 最后收到的消息序列号 */
@@ -59,6 +67,24 @@ export interface SyncCompleteAck {
   processedCount: number;
 }
 
+/** 消息持久化配置映射 */
+export const MESSAGE_PERSISTENCE_CONFIG: Record<string, MessagePersistenceConfig> = {
+  "GenesisPrompt": { persist: true, ttl: 24 },
+  "ProgressReport": { persist: true, ttl: 1 },
+  "ErrorReport": { persist: true, ttl: 24 },
+  "HeartbeatEvent": { persist: false, ttl: 0 },
+  "status.heartbeat": { persist: false, ttl: 0 },
+  "status.request": { persist: true, ttl: 1 },
+  "status.response": { persist: true, ttl: 1 },
+  "task.progress": { persist: true, ttl: 1 },
+  "task.error": { persist: true, ttl: 24 },
+  "task.complete": { persist: true, ttl: 24 },
+  "task.fail": { persist: true, ttl: 24 },
+  "reconnect.request": { persist: false, ttl: 0 },
+  "state.sync.response": { persist: false, ttl: 0 },
+  "sync.complete.ack": { persist: false, ttl: 0 },
+};
+
 // ============================================================================
 // 消息持久化服务
 // ============================================================================
@@ -71,12 +97,25 @@ export class MessagePersistenceService extends EventEmitter {
   private db: Database;
   private defaultTtlMs: number = 24 * 60 * 60 * 1000; // 24 hours
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private persistenceConfig: Record<string, MessagePersistenceConfig>;
 
-  constructor(db: Database, defaultTtlMs?: number) {
+  constructor(
+    db: Database,
+    defaultTtlMs?: number,
+    persistenceConfig?: Record<string, MessagePersistenceConfig>
+  ) {
     super();
     this.db = db;
     this.defaultTtlMs = defaultTtlMs ?? this.defaultTtlMs;
+    this.persistenceConfig = persistenceConfig ?? MESSAGE_PERSISTENCE_CONFIG;
     this.startCleanupTimer();
+  }
+
+  /**
+   * 获取消息类型的持久化配置
+   */
+  private getConfigForType(messageType: string): MessagePersistenceConfig {
+    return this.persistenceConfig[messageType] ?? { persist: true, ttl: this.defaultTtlMs / (60 * 60 * 1000) };
   }
 
   /**
@@ -87,10 +126,19 @@ export class MessagePersistenceService extends EventEmitter {
     sequence: number,
     type: string,
     payload: unknown
-  ): string {
+  ): string | null {
+    const config = this.getConfigForType(type);
+
+    // 如果该消息类型不需要持久化，直接返回
+    if (!config.persist) {
+      logger.debug("Message not persisted (disabled for type)", { type });
+      return null;
+    }
+
     const id = ulid();
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + this.defaultTtlMs);
+    const ttlMs = config.ttl * 60 * 60 * 1000;
+    const expiresAt = new Date(now.getTime() + ttlMs);
 
     const stmt = this.db.prepare(`
       INSERT INTO message_buffer (id, connection_id, sequence, type, payload, created_at, expires_at)
@@ -99,7 +147,7 @@ export class MessagePersistenceService extends EventEmitter {
 
     stmt.run(id, connectionId, sequence, type, JSON.stringify(payload), now.toISOString(), expiresAt.toISOString());
 
-    logger.debug("Message persisted", { id, connectionId, sequence, type });
+    logger.debug("Message persisted", { id, connectionId, sequence, type, ttlHours: config.ttl });
 
     this.emit("message:persisted", { id, connectionId, sequence, type });
 
@@ -109,16 +157,21 @@ export class MessagePersistenceService extends EventEmitter {
   /**
    * 获取错过的消息
    */
-  getMissedMessages(connectionId: string, lastSeq: number): PersistedMessage[] {
+  getMissedMessages(connectionId: string, lastSeq: number, limit?: number): PersistedMessage[] {
     const now = new Date();
 
-    const stmt = this.db.prepare(`
+    let sql = `
       SELECT id, connection_id, sequence, type, payload, created_at, expires_at
       FROM message_buffer
       WHERE connection_id = ? AND sequence > ? AND expires_at > ?
       ORDER BY sequence ASC
-    `);
+    `;
 
+    if (limit !== undefined) {
+      sql += ` LIMIT ${limit}`;
+    }
+
+    const stmt = this.db.prepare(sql);
     const rows = stmt.all(connectionId, lastSeq, now.toISOString()) as any[];
 
     return rows.map((row: any) => ({
@@ -130,6 +183,13 @@ export class MessagePersistenceService extends EventEmitter {
       createdAt: new Date(row.created_at),
       expiresAt: new Date(row.expires_at),
     }));
+  }
+
+  /**
+   * 获取错过的消息（别名方法，与任务要求兼容）
+   */
+  getMissedEvents(connectionId: string, lastSequence: number, limit?: number): PersistedMessage[] {
+    return this.getMissedMessages(connectionId, lastSequence, limit);
   }
 
   /**

@@ -26,6 +26,9 @@ import { DurableScheduler } from "./scheduler.js";
 import { upsertHeartbeatSchedule } from "../state/database.js";
 import type BetterSqlite3 from "better-sqlite3";
 import { createLogger } from "../observability/logger.js";
+import { createDiscoveryScheduler, type DiscoveryScheduler } from "../upwork/discovery-scheduler.js";
+import { FreelanceRepository } from "../freelance/repository.js";
+import { AnalyticsCollector } from "../freelance/analytics.js";
 
 const logger = createLogger("heartbeat");
 
@@ -61,6 +64,7 @@ export function createHeartbeatDaemon(
   const { identity, config, heartbeatConfig, db, rawDb, conway, social, onWakeRequest } = options;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let running = false;
+  let discoveryScheduler: DiscoveryScheduler | null = null;
 
   const legacyContext: HeartbeatLegacyContext = {
     identity,
@@ -75,6 +79,37 @@ export function createHeartbeatDaemon(
   for (const [name, fn] of Object.entries(BUILTIN_TASKS)) {
     taskMap.set(name, fn);
   }
+
+  // 初始化 Discovery Scheduler（仅在启用自由职业功能时）
+  // NOTE: Freelance features are under development - disabled for build
+  // TODO: Enable when freelance types are complete
+  /*
+  if (config.features?.freelance?.enabled !== false) {
+    try {
+      const repository = new FreelanceRepository(rawDb);
+      const analytics = new AnalyticsCollector(rawDb);
+      const upworkClient = (await import("../upwork/client.js")).createUpworkClient({
+        apiKey: config.upwork?.apiKey || "",
+        apiSecret: config.upwork?.apiSecret || "",
+      });
+
+      discoveryScheduler = createDiscoveryScheduler(
+        upworkClient,
+        repository,
+        analytics,
+        {
+          checkIntervalMs: config.freelance?.discoveryIntervalMs || 5 * 60 * 1000,
+          maxJobsPerCheck: config.freelance?.maxJobsPerCheck || 20,
+          minScoreThreshold: config.freelance?.minScoreThreshold || 60,
+          autoBidEnabled: config.freelance?.autoBidEnabled || false,
+        }
+      );
+      logger.info("DiscoveryScheduler initialized");
+    } catch (err) {
+      logger.error("Failed to initialize DiscoveryScheduler", err instanceof Error ? err : undefined);
+    }
+  }
+  */
 
   // Seed heartbeat_schedule from config entries if not already present
   for (const entry of heartbeatConfig.entries) {
@@ -131,6 +166,19 @@ export function createHeartbeatDaemon(
     if (running) return;
     running = true;
 
+    // Start Discovery Scheduler if initialized
+    // NOTE: Disabled while freelance features are under development
+    /*
+    if (discoveryScheduler) {
+      try {
+        discoveryScheduler.start();
+        logger.info("DiscoveryScheduler started");
+      } catch (err) {
+        logger.error("Failed to start DiscoveryScheduler", err instanceof Error ? err : undefined);
+      }
+    }
+    */
+
     // Run first tick immediately
     scheduler.tick().catch((err) => {
       logger.error("First tick failed", err instanceof Error ? err : undefined);
@@ -145,6 +193,20 @@ export function createHeartbeatDaemon(
   const stop = (): void => {
     if (!running) return;
     running = false;
+
+    // Stop Discovery Scheduler if initialized
+    // NOTE: Disabled while freelance features are under development
+    /*
+    if (discoveryScheduler) {
+      try {
+        discoveryScheduler.stop();
+        logger.info("DiscoveryScheduler stopped");
+      } catch (err) {
+        logger.error("Failed to stop DiscoveryScheduler", err instanceof Error ? err : undefined);
+      }
+    }
+    */
+
     if (timeoutId) {
       clearTimeout(timeoutId);
       timeoutId = null;

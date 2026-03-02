@@ -9,6 +9,9 @@
 // 类型导出
 export * from "./types.js";
 
+// 自由职业消息类型导出
+export * from "./freelance-message-types.js";
+
 // 常量导出
 export {
   ANP_CONTEXT,

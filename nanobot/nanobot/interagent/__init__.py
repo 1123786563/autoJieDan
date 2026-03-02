@@ -23,6 +23,16 @@ from nanobot.interagent.requirement_parser import (
     TechStack,
 )
 
+# 导入错误报告模块
+from nanobot.interagent.error_reporter import (
+    ErrorHandler,
+    ErrorRecoveryStrategy,
+    ErrorSeverity,
+    RecoverySuggestion,
+    ErrorContext,
+    ErrorReportOptions,
+)
+
 __all__ = [
     "ProjectFilter",
     "ProjectCandidate",
@@ -38,4 +48,11 @@ __all__ = [
     "ComplexityLevel",
     "SkillRequirement",
     "EffortEstimate",
+    # 错误报告
+    "ErrorHandler",
+    "ErrorRecoveryStrategy",
+    "ErrorSeverity",
+    "RecoverySuggestion",
+    "ErrorContext",
+    "ErrorReportOptions",
 ]

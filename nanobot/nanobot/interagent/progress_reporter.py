@@ -875,3 +875,257 @@ def format_progress_report(report: ProgressReport) -> str:
         lines.append(f"API Calls: {report.resources.api_calls}")
 
     return "\n".join(lines)
+
+
+# ============================================================================
+# ANP 进度报告器 - 向 Automaton 发送进度
+# ============================================================================
+
+class ANPProgressReporter:
+    """
+    ANP 进度报告器
+
+    负责将进度信息发送给 Automaton
+    """
+
+    def __init__(
+        self,
+        ws_client=None,
+        ws_pool=None,
+    ):
+        """
+        初始化 ANP 进度报告器
+
+        Args:
+            ws_client: WebSocket 客户端（用于单连接）
+            ws_pool: WebSocket 连接池（用于连接池模式）
+        """
+        from nanobot.interagent.websocket import (
+            InteragentWebSocketClient,
+            WebSocketConnectionPool,
+        )
+
+        self.ws_client = ws_client
+        self.ws_pool = ws_pool
+        self._report_buffer = []
+        self._max_buffer_size = 50
+
+    async def report_progress(
+        self,
+        task_id: str,
+        progress: int,
+        current_phase: str,
+        completed_steps: list = None,
+        next_steps: list = None,
+        eta_seconds: int = None,
+        blockers: list = None,
+        message: str = None,
+    ) -> bool:
+        """
+        发送进度报告给 Automaton
+
+        Args:
+            task_id: 任务 ID
+            progress: 进度百分比 (0-100)
+            current_phase: 当前阶段
+            completed_steps: 已完成的步骤
+            next_steps: 下一步计划
+            eta_seconds: 预计剩余时间（秒）
+            blockers: 阻塞问题列表
+            message: 附加消息
+
+        Returns:
+            是否发送成功
+        """
+        try:
+            from nanobot.interagent.websocket import create_progress_event
+
+            # 创建进度事件
+            progress_event = create_progress_event(
+                source="nanobot",
+                target="automaton",
+                task_id=task_id,
+                progress=float(progress),
+                current_phase=current_phase,
+                completed_steps=completed_steps or [],
+                next_steps=next_steps or [],
+                eta_seconds=float(eta_seconds) if eta_seconds else None,
+            )
+
+            # 添加阻塞问题
+            if blockers:
+                progress_event["payload"]["blockers"] = blockers
+
+            # 添加附加消息
+            if message:
+                progress_event["payload"]["message"] = message
+
+            # 发送事件
+            success = await self._send_event(progress_event)
+
+            if success:
+                logger.debug(
+                    f"Progress report sent: {task_id} - {progress}% "
+                    f"({current_phase})"
+                )
+            else:
+                logger.warning("Failed to send progress report, buffering...")
+                self._buffer_report(progress_event)
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error sending progress report: {e}", exc_info=True)
+            return False
+
+    async def report_completion(
+        self,
+        task_id: str,
+        final_message: str = None,
+        result_summary: dict = None,
+    ) -> bool:
+        """
+        报告任务完成
+
+        Args:
+            task_id: 任务 ID
+            final_message: 完成消息
+            result_summary: 结果摘要
+
+        Returns:
+            是否发送成功
+        """
+        return await self.report_progress(
+            task_id=task_id,
+            progress=100,
+            current_phase="completed",
+            completed_steps=["all"],
+            next_steps=[],
+            message=final_message or "Task completed successfully",
+        )
+
+    async def report_failure(
+        self,
+        task_id: str,
+        error_message: str,
+        error_code: str = None,
+    ) -> bool:
+        """
+        报告任务失败
+
+        Args:
+            task_id: 任务 ID
+            error_message: 错误消息
+            error_code: 错误代码
+
+        Returns:
+            是否发送成功
+        """
+        # 使用错误报告器报告失败
+        from nanobot.interagent.error_reporter import ErrorHandler, ErrorSeverity
+
+        error_handler = ErrorHandler()
+        error_report = error_handler.create_error_report(
+            task_id=task_id,
+            message=error_message,
+            severity=ErrorSeverity.ERROR,
+            recoverable=False,
+        )
+
+        # TODO: 发送错误报告
+        logger.error(f"Task {task_id} failed: {error_message}")
+        return False
+
+    async def _send_event(self, event: dict) -> bool:
+        """
+        发送事件
+
+        Args:
+            event: 事件字典
+
+        Returns:
+            是否发送成功
+        """
+        # 优先使用连接池
+        if self.ws_pool and self.ws_pool.is_running():
+            try:
+                async with await self.ws_pool.acquire() as conn:
+                    return await conn.send(event)
+            except Exception as e:
+                logger.error(f"Failed to send via pool: {e}")
+
+        # 回退到单连接
+        if self.ws_client and self.ws_client.is_connected():
+            try:
+                return await self.ws_client.send(event)
+            except Exception as e:
+                logger.error(f"Failed to send via client: {e}")
+
+        return False
+
+    def _buffer_report(self, event: dict) -> None:
+        """
+        缓存进度报告
+
+        Args:
+            event: 事件字典
+        """
+        self._report_buffer.append(event)
+
+        # 限制缓冲区大小
+        if len(self._report_buffer) > self._max_buffer_size:
+            self._report_buffer.pop(0)
+
+    async def flush_buffer(self) -> int:
+        """
+        刷新缓冲区，重试发送所有缓存的报告
+
+        Returns:
+            成功发送的数量
+        """
+        if not self._report_buffer:
+            return 0
+
+        logger.info(f"Flushing {len(self._report_buffer)} buffered progress reports")
+
+        sent_count = 0
+        remaining = []
+
+        for event in self._report_buffer:
+            success = await self._send_event(event)
+            if success:
+                sent_count += 1
+            else:
+                remaining.append(event)
+
+        self._report_buffer = remaining
+        return sent_count
+
+    def get_buffer_size(self) -> int:
+        """获取缓冲区大小"""
+        return len(self._report_buffer)
+
+    def clear_buffer(self) -> None:
+        """清空缓冲区"""
+        self._report_buffer.clear()
+
+
+# ============================================================================
+# 工厂函数
+# ============================================================================
+
+def create_anp_progress_reporter(
+    ws_client=None,
+    ws_pool=None,
+) -> ANPProgressReporter:
+    """
+    创建 ANP 进度报告器
+
+    Args:
+        ws_client: WebSocket 客户端
+        ws_pool: WebSocket 连接池
+
+    Returns:
+        ANPProgressReporter 实例
+    """
+    return ANPProgressReporter(ws_client, ws_pool)

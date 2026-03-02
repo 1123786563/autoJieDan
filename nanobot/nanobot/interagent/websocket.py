@@ -43,6 +43,9 @@ class WebSocketConfig:
     max_reconnect_attempts: int = 5  # 最大重连次数
     heartbeat_interval: float = 20.0  # 心跳间隔 (秒)
     heartbeat_timeout: float = 10.0  # 心跳超时 (秒)
+    enable_reconnection_sync: bool = True  # 启用重连状态同步
+    message_buffer_size: int = 10000  # 消息缓冲区大小
+    message_ttl_hours: int = 24  # 消息过期时间 (小时)
 
 
 @dataclass
@@ -56,6 +59,9 @@ class ConnectionState:
     last_heartbeat: Optional[float] = None
     messages_sent: int = 0
     messages_received: int = 0
+    connection_id: Optional[str] = None  # 连接 ID (用于重连状态同步)
+    current_sequence: int = 0  # 当前消息序列号
+    last_synced_sequence: int = 0  # 最后同步的序列号
 
 
 @dataclass
@@ -128,6 +134,9 @@ class PooledConnection:
     last_used: float
     in_use: bool = False
     message_handler: Optional[Callable[[dict], None]] = None
+    connection_id: Optional[str] = None  # 连接 ID (用于重连状态同步)
+    current_sequence: int = 0  # 当前消息序列号
+    last_synced_sequence: int = 0  # 最后同步的序列号
 
 
 # ============================================================================
@@ -156,15 +165,24 @@ class InteragentWebSocketClient:
         self._running = False
         self._reconnect_task: Optional[asyncio.Task] = None
         self._ping_task: Optional[asyncio.Task] = None
+        self._message_buffer: List[dict] = []  # 消息缓冲区
+        self._sequence_number: int = 0  # 消息序列号
 
     async def connect(self) -> bool:
         """
         建立 WebSocket 连接
         """
         try:
+            # 生成或复用连接 ID
+            if not self.state.connection_id:
+                self.state.connection_id = str(uuid.uuid4())
+
+            # 构建 WebSocket URL，包含连接参数
+            url = self._build_connection_url()
+
             self.ws = await asyncio.wait_for(
                 websockets.connect(
-                    self.config.url,
+                    url,
                     ping_interval=self.config.ping_interval,
                     ping_timeout=10
                 ),
@@ -177,6 +195,10 @@ class InteragentWebSocketClient:
             self.state.error = None
             self._running = True
 
+            # 如果启用重连状态同步，请求同步
+            if self.config.enable_reconnection_sync and self.state.last_synced_sequence > 0:
+                await self._request_state_sync()
+
             # 启动消息接收循环
             asyncio.create_task(self._receive_loop())
 
@@ -187,6 +209,89 @@ class InteragentWebSocketClient:
         except Exception as e:
             self.state.error = str(e)
             return False
+
+    def _build_connection_url(self) -> str:
+        """
+        构建包含连接参数的 WebSocket URL
+        """
+        from urllib.parse import urlencode, urlparse
+
+        # 解析原始 URL
+        parsed = urlparse(self.config.url)
+
+        # 构建查询参数
+        params = {
+            "connectionId": self.state.connection_id or str(uuid.uuid4()),
+            "lastSeq": str(self.state.last_synced_sequence),
+        }
+
+        # 构建新 URL
+        query = urlencode(params)
+        if parsed.query:
+            query = parsed.query + "&" + query
+
+        new_url = parsed._replace(query=query).geturl()
+        return new_url
+
+    async def _request_state_sync(self) -> None:
+        """
+        请求状态同步（重连时）
+        """
+        if not self.ws or not self.state.connection_id:
+            return
+
+        reconnect_request = {
+            "type": "reconnect.request",
+            "connectionId": self.state.connection_id,
+            "lastSeq": self.state.last_synced_sequence,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime()),
+        }
+
+        try:
+            await self.ws.send(json.dumps(reconnect_request))
+            logger.info(f"Sent reconnect request: lastSeq={self.state.last_synced_sequence}")
+        except Exception as e:
+            logger.error(f"Failed to send reconnect request: {e}")
+
+    async def _handle_state_sync_response(self, response: dict) -> None:
+        """
+        处理状态同步响应
+        """
+        messages = response.get("messages", [])
+        current_seq = response.get("currentSeq", self.state.last_synced_sequence)
+
+        logger.info(f"Received state sync: {len(messages)} messages, currentSeq={current_seq}")
+
+        # 处理错过的消息
+        for msg in messages:
+            if self.on_message:
+                self.on_message(msg)
+
+        # 更新序列号
+        self.state.last_synced_sequence = current_seq
+
+        # 发送同步完成确认
+        await self._send_sync_complete_ack(len(messages))
+
+    async def _send_sync_complete_ack(self, processed_count: int) -> None:
+        """
+        发送同步完成确认
+        """
+        if not self.ws or not self.state.connection_id:
+            return
+
+        sync_ack = {
+            "type": "sync.complete.ack",
+            "connectionId": self.state.connection_id,
+            "completedAt": time.strftime("%Y-%m-%dT%H:%M:%S.%fZ", time.gmtime()),
+            "processedCount": processed_count,
+        }
+
+        try:
+            await self.ws.send(json.dumps(sync_ack))
+            logger.debug(f"Sent sync complete ack: {processed_count} messages")
+        except Exception as e:
+            logger.error(f"Failed to send sync complete ack: {e}")
 
     async def disconnect(self) -> None:
         """
@@ -212,7 +317,19 @@ class InteragentWebSocketClient:
             return False
 
         try:
-            await self.ws.send(json.dumps(message))
+            # 添加序列号到消息
+            self._sequence_number += 1
+            message_with_seq = {
+                **message,
+                "sequence": self._sequence_number,
+            }
+
+            await self.ws.send(json.dumps(message_with_seq))
+            self.state.messages_sent += 1
+
+            # 更新最后同步的序列号
+            self.state.last_synced_sequence = self._sequence_number
+
             return True
         except Exception as e:
             self.state.error = str(e)
@@ -226,6 +343,19 @@ class InteragentWebSocketClient:
             try:
                 message = await self.ws.recv()
                 data = json.loads(message)
+
+                # 更新心跳时间
+                self.state.last_heartbeat = time.time()
+                self.state.messages_received += 1
+
+                # 检查是否是状态同步响应
+                if data.get("type") == "state.sync.response":
+                    await self._handle_state_sync_response(data)
+                    continue
+
+                # 更新序列号
+                if "sequence" in data:
+                    self.state.current_sequence = data["sequence"]
 
                 # 调用消息处理器
                 if self.on_message:
@@ -559,9 +689,15 @@ class WebSocketConnectionPool:
             return None
 
         try:
+            # 生成连接 ID
+            connection_id = str(uuid.uuid4())
+
+            # 构建包含连接参数的 URL
+            url = self._build_connection_url(connection_id)
+
             ws = await asyncio.wait_for(
                 websockets.connect(
-                    self._ws_config.url,
+                    url,
                     ping_interval=self._ws_config.ping_interval,
                     ping_timeout=10
                 ),
@@ -575,7 +711,10 @@ class WebSocketConnectionPool:
                 connected=True,
                 last_connected=now,
                 status=ConnectionStatus.CONNECTED,
-                last_heartbeat=now
+                last_heartbeat=now,
+                connection_id=connection_id,
+                current_sequence=0,
+                last_synced_sequence=0
             )
 
             conn = PooledConnection(
@@ -583,7 +722,10 @@ class WebSocketConnectionPool:
                 ws=ws,
                 state=state,
                 created_at=now,
-                last_used=now
+                last_used=now,
+                connection_id=connection_id,
+                current_sequence=0,
+                last_synced_sequence=0
             )
 
             self._connections[conn_id] = conn
@@ -592,12 +734,35 @@ class WebSocketConnectionPool:
             # 启动消息接收循环
             asyncio.create_task(self._connection_receive_loop(conn_id))
 
-            logger.debug(f"Created new connection: {conn_id}")
+            logger.debug(f"Created new connection: {conn_id} (connection_id: {connection_id})")
             return conn_id
 
         except Exception as e:
             logger.error(f"Failed to create connection: {e}")
             return None
+
+    def _build_connection_url(self, connection_id: str) -> str:
+        """
+        构建包含连接参数的 WebSocket URL
+        """
+        from urllib.parse import urlencode, urlparse
+
+        # 解析原始 URL
+        parsed = urlparse(self._ws_config.url)
+
+        # 构建查询参数
+        params = {
+            "connectionId": connection_id,
+            "lastSeq": "0",  # 新连接从 0 开始
+        }
+
+        # 构建新 URL
+        query = urlencode(params)
+        if parsed.query:
+            query = parsed.query + "&" + query
+
+        new_url = parsed._replace(query=query).geturl()
+        return new_url
 
     async def _close_connection(self, conn_id: str) -> None:
         """

@@ -1,0 +1,112 @@
+# Prometheus Alert Rules for AutoJieDan Freelance System
+# Phase 1F-01: Monitoring Configuration
+
+groups:
+  - name: freelance_alerts
+    interval: 30s
+    rules:
+      # ==================== Cost Alerts ====================
+      - alert: ProjectCostWarning
+        expr: (project_cost_cents / project_budget_cents) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: cost
+        annotations:
+          summary: "Project cost exceeds 50% of budget"
+          description: "Project {{ $labels.project_id }} has spent {{ $value | humanizePercentage }} of its budget"
+
+      - alert: ProjectCostCritical
+        expr: (project_cost_cents / project_budget_cents) > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          category: cost
+        annotations:
+          summary: "Project cost exceeds 80% of budget"
+          description: "Project {{ $labels.project_id }} has spent {{ $value | humanizePercentage }} of its budget - immediate action required"
+
+      # ==================== Business Alerts ====================
+      - alert: NoProjectsDiscovered
+        expr: rate(projects_discovered_total[1h]) == 0
+        for: 2h
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "No new projects discovered in 2 hours"
+          description: "The system has not discovered any new freelance projects in the last 2 hours - check scraping configuration"
+
+      - alert: LowBidAcceptanceRate
+        expr: |
+          rate(bids_accepted_total[24h]) /
+          rate(bids_submitted_total[24h]) < 0.1
+        for: 6h
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Bid acceptance rate below 10%"
+          description: "Only {{ $value | humanizePercentage }} of submitted bids were accepted in the last 24h - review bidding strategy"
+
+      # ==================== Technical Alerts ====================
+      - alert: LLMCallLatency
+        expr: histogram_quantile(0.95, rate(llm_call_duration_seconds_bucket[5m])) > 30
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "LLM call latency too high"
+          description: "95th percentile LLM call latency is {{ $value }}s - check LLM provider status"
+
+      - alert: LLMCallLatencyCritical
+        expr: histogram_quantile(0.95, rate(llm_call_duration_seconds_bucket[5m])) > 60
+        for: 5m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Critical LLM call latency"
+          description: "95th percentile LLM call latency is {{ $value }}s - service may be degraded"
+
+      - alert: WebSocketDisconnect
+        expr: websocket_connections_connected < 1
+        for: 2m
+        labels:
+          severity: critical
+          category: connectivity
+        annotations:
+          summary: "WebSocket connection lost"
+          description: "No active WebSocket connections between Automaton and Nanobot for 2 minutes"
+
+      - alert: HighWebSocketReconnectRate
+        expr: rate(websocket_reconnects_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: connectivity
+        annotations:
+          summary: "High WebSocket reconnection rate"
+          description: "WebSocket is reconnecting frequently ({{ $value }} reconnects/sec) - check network stability"
+
+      # ==================== System Health Alerts ====================
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} - check application logs"
+
+      - alert: DatabaseConnectionFailure
+        expr: sqlite_connections_active == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "Database connection lost"
+          description: "No active SQLite database connections - service may be unavailable"

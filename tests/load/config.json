@@ -1,0 +1,55 @@
+{
+  "environments": {
+    "local": {
+      "base_url": "http://localhost:10790",
+      "description": "Local development environment"
+    },
+    "docker": {
+      "base_url": "http://localhost:8080",
+      "description": "Docker container environment"
+    },
+    "staging": {
+      "base_url": "https://staging.autojiedan.example.com",
+      "description": "Staging environment"
+    },
+    "production": {
+      "base_url": "https://autojiedan.example.com",
+      "description": "Production environment (use with caution)"
+    }
+  },
+  "scenarios": {
+    "smoke": {
+      "vus": 1,
+      "duration": "30s",
+      "description": "Quick smoke test"
+    },
+    "constant_load": {
+      "vus": 10,
+      "duration": "5m",
+      "description": "Steady load test"
+    },
+    "spike_test": {
+      "stages": [
+        { "duration": "1m", "target": 50 },
+        { "duration": "2m", "target": 50 },
+        { "duration": "1m", "target": 0 }
+      ],
+      "description": "Traffic spike test"
+    },
+    "stress_test": {
+      "stages": [
+        { "duration": "2m", "target": 100 },
+        { "duration": "5m", "target": 100 },
+        { "duration": "2m", "target": 200 },
+        { "duration": "5m", "target": 200 },
+        { "duration": "2m", "target": 0 }
+      ],
+      "description": "Stress test (find breaking point)"
+    }
+  },
+  "thresholds": {
+    "response_time_p95_ms": 500,
+    "response_time_p99_ms": 1000,
+    "error_rate_percent": 1
+  }
+}

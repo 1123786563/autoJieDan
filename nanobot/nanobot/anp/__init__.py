@@ -274,4 +274,8 @@ __all__ = [
     "get_global_resolver",
     "set_global_resolver",
     "resolver_resolve_did",
+
+    # 消息处理器
+    "ANPMessageHandler",
+    "create_anp_message_handler",
 ]

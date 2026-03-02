@@ -527,3 +527,378 @@ class ANPError(Exception):
         self.details = details or {}
         super().__init__(code.value, message)
         self.name = "ANPError"
+
+
+# ============================================================================
+# 自由职业项目专用 ANP 消息类型
+# ============================================================================
+
+
+class FreelanceANPMessageType(str, Enum):
+    """自由职业项目 ANP 消息类型枚举"""
+    # 任务分发
+    GENESIS_PROMPT = "GenesisPrompt"
+    GENESIS_PROMPT_ACK = "GenesisPromptAck"
+    TASK_ACCEPT = "TaskAccept"
+    TASK_REJECT = "TaskReject"
+    # 进度报告
+    PROGRESS_REPORT = "ProgressReport"
+    PROGRESS_REPORT_ACK = "ProgressReportAck"
+    # 错误报告
+    ERROR_REPORT = "ErrorReport"
+    ERROR_REPORT_ACK = "ErrorReportAck"
+    # 重连和状态同步
+    RECONNECT_REQUEST = "ReconnectRequest"
+    STATE_SYNC_RESPONSE = "StateSyncResponse"
+    SYNC_COMPLETE_ACK = "SyncCompleteAck"
+    # 人工介入
+    HUMAN_INTERVENTION_REQUEST = "HumanInterventionRequest"
+    HUMAN_INTERVENTION_RESPONSE = "HumanInterventionResponse"
+    # 任务控制
+    TASK_PAUSE = "TaskPause"
+    TASK_RESUME = "TaskResume"
+    TASK_CANCEL = "TaskCancel"
+
+
+# ============================================================================
+# Genesis Prompt 相关类型
+# ============================================================================
+
+
+class GenesisPromptAckPayload(BaseModel):
+    """Genesis Prompt 确认负载"""
+    type: str = Field(default="freelance:GenesisPromptAck", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    project_id: str = Field(alias="freelance:projectId")
+    accepted: bool = Field(alias="freelance:accepted")
+    estimated_start_at: Optional[str] = Field(default=None, alias="freelance:estimatedStartAt")
+    rejection_reason: Optional[str] = Field(default=None, alias="freelance:rejectionReason")
+
+    class Config:
+        populate_by_name = True
+
+
+class TaskAcceptPayload(BaseModel):
+    """任务接受负载"""
+    type: str = Field(default="freelance:TaskAccept", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    project_id: str = Field(alias="freelance:projectId")
+    accepted_at: datetime = Field(alias="freelance:acceptedAt")
+    estimated_completion_at: datetime = Field(alias="freelance:estimatedCompletionAt")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class TaskRejectPayload(BaseModel):
+    """任务拒绝负载"""
+    type: str = Field(default="freelance:TaskReject", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    project_id: str = Field(alias="freelance:projectId")
+    rejected_at: datetime = Field(alias="freelance:rejectedAt")
+    reason: str = Field(alias="freelance:reason")
+    reason_category: Literal["insufficient_budget", "technical_constraints", "capacity", "other"] = Field(
+        alias="freelance:reasonCategory"
+    )
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+# ============================================================================
+# Progress Report 相关类型
+# ============================================================================
+
+
+class ProgressReportAckPayload(BaseModel):
+    """进度报告确认负载"""
+    type: str = Field(default="freelance:ProgressReportAck", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    report_id: str = Field(alias="freelance:reportId")
+    acknowledged_at: datetime = Field(alias="freelance:acknowledgedAt")
+    action_required: Optional[str] = Field(default=None, alias="freelance:actionRequired")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class FreelanceProgressReportPayload(ProgressReportPayload):
+    """扩展的进度报告负载 - 添加自由职业项目特定字段"""
+
+    project_id: Optional[str] = Field(default=None, alias="freelance:projectId")
+    goal_id: Optional[str] = Field(default=None, alias="freelance:goalId")
+    deliverables_completed: Optional[int] = Field(default=None, alias="freelance:deliverablesCompleted")
+    deliverables_total: Optional[int] = Field(default=None, alias="freelance:deliverablesTotal")
+    time_spent_seconds: Optional[int] = Field(default=None, alias="freelance:timeSpentSeconds")
+    estimated_time_remaining_seconds: Optional[int] = Field(
+        default=None, alias="freelance:estimatedTimeRemainingSeconds"
+    )
+
+
+# ============================================================================
+# Error Report 相关类型
+# ============================================================================
+
+
+class ErrorReportAckPayload(BaseModel):
+    """错误报告确认负载"""
+    type: str = Field(default="freelance:ErrorReportAck", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    report_id: str = Field(alias="freelance:reportId")
+    acknowledged_at: datetime = Field(alias="freelance:acknowledgedAt")
+    intervention_created: Optional[bool] = Field(default=None, alias="freelance:interventionCreated")
+    intervention_id: Optional[str] = Field(default=None, alias="freelance:interventionId")
+    action_required: Optional[str] = Field(default=None, alias="freelance:actionRequired")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class FreelanceErrorReportPayload(ErrorReportPayload):
+    """扩展的错误报告负载 - 添加自由职业项目特定字段"""
+
+    project_id: Optional[str] = Field(default=None, alias="freelance:projectId")
+    goal_id: Optional[str] = Field(default=None, alias="freelance:goalId")
+    requires_human_intervention: Optional[bool] = Field(default=None, alias="freelance:requiresHumanIntervention")
+    client_notified: Optional[bool] = Field(default=None, alias="freelance:clientNotified")
+
+
+# ============================================================================
+# 重连和状态同步相关类型
+# ============================================================================
+
+
+class ReconnectRequestPayload(BaseModel):
+    """重连请求负载"""
+    type: str = Field(default="freelance:ReconnectRequest", alias="@type")
+    connection_id: str = Field(alias="freelance:connectionId")
+    last_sequence_number: int = Field(alias="freelance:lastSequenceNumber")
+    reconnect_reason: Literal["network_error", "timeout", "server_close", "manual"] = Field(
+        alias="freelance:reconnectReason"
+    )
+    reconnect_at: datetime = Field(alias="freelance:reconnectAt")
+    active_tasks: Optional[List[str]] = Field(default_factory=list, alias="freelance:activeTasks")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class MissedEvent(BaseModel):
+    """错过的事件 - 用于状态同步"""
+    id: str
+    sequence: int
+    type: str
+    timestamp: datetime
+    payload: str  # JSON 序列化的负载
+
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class TaskState(BaseModel):
+    """任务状态快照 - 用于状态同步"""
+    task_id: str
+    project_id: Optional[str] = None
+    goal_id: Optional[str] = None
+    status: str
+    progress: int = Field(ge=0, le=100)
+    last_update_at: datetime
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class StateSyncResponsePayload(BaseModel):
+    """状态同步响应负载"""
+    type: str = Field(default="freelance:StateSyncResponse", alias="@type")
+    connection_id: str = Field(alias="freelance:connectionId")
+    sync_required: bool = Field(alias="freelance:syncRequired")
+    missed_events: List[MissedEvent] = Field(default_factory=list, alias="freelance:missedEvents")
+    current_sequence_number: int = Field(alias="freelance:currentSequenceNumber")
+    server_time: datetime = Field(alias="freelance:serverTime")
+    active_task_states: List[TaskState] = Field(default_factory=list, alias="freelance:activeTaskStates")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class SyncCompleteAckPayload(BaseModel):
+    """同步完成确认负载"""
+    type: str = Field(default="freelance:SyncCompleteAck", alias="@type")
+    connection_id: str = Field(alias="freelance:connectionId")
+    synchronized_at: datetime = Field(alias="freelance:synchronizedAt")
+    events_processed: int = Field(alias="freelance:eventsProcessed")
+    last_processed_sequence: int = Field(alias="freelance:lastProcessedSequence")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+# ============================================================================
+# 人工介入相关类型
+# ============================================================================
+
+
+class HumanInterventionRequestPayload(BaseModel):
+    """人工介入请求负载"""
+    type: str = Field(default="freelance:HumanInterventionRequest", alias="@type")
+    intervention_id: str = Field(alias="freelance:interventionId")
+    intervention_type: Literal[
+        "contract_sign",
+        "large_spend",
+        "project_start",
+        "refund",
+        "dispute_l2",
+        "dispute_l3",
+        "quality_review",
+        "customer_complaint",
+    ] = Field(alias="freelance:interventionType")
+    project_id: Optional[str] = Field(default=None, alias="freelance:projectId")
+    goal_id: Optional[str] = Field(default=None, alias="freelance:goalId")
+    task_id: Optional[str] = Field(default=None, alias="freelance:taskId")
+    reason: str = Field(alias="freelance:reason")
+    context: Dict[str, Any] = Field(default_factory=dict, alias="freelance:context")
+    priority: Literal["low", "normal", "high", "urgent"] = Field(alias="freelance:priority")
+    sla_deadline: datetime = Field(alias="freelance:slaDeadline")
+    requested_at: datetime = Field(alias="freelance:requestedAt")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class HumanInterventionResponsePayload(BaseModel):
+    """人工介入响应负载"""
+    type: str = Field(default="freelance:HumanInterventionResponse", alias="@type")
+    intervention_id: str = Field(alias="freelance:interventionId")
+    decision: Literal["approve", "reject", "timeout"] = Field(alias="freelance:decision")
+    responded_at: datetime = Field(alias="freelance:respondedAt")
+    responder: str = Field(alias="freelance:responder")
+    notes: Optional[str] = Field(default=None, alias="freelance:notes")
+    action_taken: Optional[str] = Field(default=None, alias="freelance:actionTaken")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+# ============================================================================
+# 任务控制相关类型
+# ============================================================================
+
+
+class TaskPausePayload(BaseModel):
+    """任务暂停负载"""
+    type: str = Field(default="freelance:TaskPause", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    project_id: Optional[str] = Field(default=None, alias="freelance:projectId")
+    paused_at: datetime = Field(alias="freelance:pausedAt")
+    reason: str = Field(alias="freelance:reason")
+    resume_at: Optional[datetime] = Field(default=None, alias="freelance:resumeAt")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class TaskResumePayload(BaseModel):
+    """任务恢复负载"""
+    type: str = Field(default="freelance:TaskResume", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    project_id: Optional[str] = Field(default=None, alias="freelance:projectId")
+    resumed_at: datetime = Field(alias="freelance:resumedAt")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+class TaskCancelPayload(BaseModel):
+    """任务取消负载"""
+    type: str = Field(default="freelance:TaskCancel", alias="@type")
+    task_id: str = Field(alias="freelance:taskId")
+    project_id: Optional[str] = Field(default=None, alias="freelance:projectId")
+    cancelled_at: datetime = Field(alias="freelance:cancelledAt")
+    reason: str = Field(alias="freelance:reason")
+    cleanup_required: Optional[bool] = Field(default=None, alias="freelance:cleanupRequired")
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+
+# ============================================================================
+# 消息持久化配置
+# ============================================================================
+
+
+class MessagePersistenceConfig(BaseModel):
+    """消息持久化配置"""
+    persist: bool
+    ttl: int  # 小时，0 表示不过期
+
+
+FREELANCE_MESSAGE_PERSISTENCE: Dict[str, MessagePersistenceConfig] = {
+    # 任务分发消息需要持久化，用于重连时同步
+    "GenesisPrompt": MessagePersistenceConfig(persist=True, ttl=24),
+    "GenesisPromptAck": MessagePersistenceConfig(persist=True, ttl=24),
+    "TaskAccept": MessagePersistenceConfig(persist=True, ttl=72),
+    "TaskReject": MessagePersistenceConfig(persist=True, ttl=24),
+    # 进度报告短时间保留即可
+    "ProgressReport": MessagePersistenceConfig(persist=True, ttl=1),
+    "ProgressReportAck": MessagePersistenceConfig(persist=True, ttl=1),
+    # 错误报告需要长期保留用于分析
+    "ErrorReport": MessagePersistenceConfig(persist=True, ttl=24 * 7),  # 7天
+    "ErrorReportAck": MessagePersistenceConfig(persist=True, ttl=24 * 7),
+    # 人工介入消息需要持久化
+    "HumanInterventionRequest": MessagePersistenceConfig(persist=True, ttl=24 * 30),  # 30天
+    "HumanInterventionResponse": MessagePersistenceConfig(persist=True, ttl=24 * 30),
+    # 任务控制消息
+    "TaskPause": MessagePersistenceConfig(persist=True, ttl=24),
+    "TaskResume": MessagePersistenceConfig(persist=True, ttl=24),
+    "TaskCancel": MessagePersistenceConfig(persist=True, ttl=72),
+    # 重连消息不需要持久化
+    "ReconnectRequest": MessagePersistenceConfig(persist=False, ttl=0),
+    "StateSyncResponse": MessagePersistenceConfig(persist=False, ttl=0),
+    "SyncCompleteAck": MessagePersistenceConfig(persist=False, ttl=0),
+    # 心跳不需要持久化
+    "HeartbeatEvent": MessagePersistenceConfig(persist=False, ttl=0),
+}
+
+
+# ============================================================================
+# 消息优先级
+# ============================================================================
+
+
+FREELANCE_MESSAGE_PRIORITY: Dict[str, str] = {
+    # 紧急消息
+    "ErrorReport": "P0",
+    "TaskCancel": "P0",
+    "HumanInterventionRequest": "P0",
+    "HumanInterventionResponse": "P0",
+    # 高优先级
+    "GenesisPrompt": "P1",
+    "GenesisPromptAck": "P1",
+    "TaskAccept": "P1",
+    "TaskReject": "P1",
+    "TaskPause": "P1",
+    # 正常优先级
+    "TaskResume": "P2",
+    "ProgressReport": "P2",
+    "ProgressReportAck": "P2",
+    "ErrorReportAck": "P2",
+    "ReconnectRequest": "P2",
+    "StateSyncResponse": "P2",
+    "SyncCompleteAck": "P2",
+    # 低优先级
+    "HeartbeatEvent": "P3",
+}

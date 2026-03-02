@@ -427,6 +427,15 @@ class AgentLoop:
                 channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
             ))
 
+            # 发送进度报告到 Automaton (如果启用 interagent)
+            if msg.channel == "system" and "interagent" in str(meta):
+                await self._send_progress_report_to_automaton(
+                    task_id=meta.get("task_id", "unknown"),
+                    progress=meta.get("progress", 0),
+                    current_phase=meta.get("phase", "processing"),
+                    message=content,
+                )
+
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages, on_progress=on_progress or _bus_progress,
         )
@@ -470,6 +479,94 @@ class AgentLoop:
             session, self.provider, self.model,
             archive_all=archive_all, memory_window=self.memory_window,
         )
+
+    async def _send_progress_report_to_automaton(
+        self,
+        task_id: str,
+        progress: int,
+        current_phase: str,
+        message: str,
+        blockers: list[str] | None = None,
+        eta_seconds: int | None = None,
+    ) -> None:
+        """Send progress report to Automaton via interagent WebSocket."""
+        try:
+            from nanobot.interagent.progress_reporter import ANPProgressReporter
+            import os
+
+            # 检查是否启用 interagent
+            if not os.getenv("INTERAGENT_SECRET"):
+                return
+
+            # 获取或创建进度报告器
+            # TODO: 缓存 reporter 实例而不是每次创建
+            reporter = ANPProgressReporter()
+
+            # 发送进度报告
+            await reporter.report_progress(
+                task_id=task_id,
+                progress=progress,
+                current_phase=current_phase,
+                completed_steps=[],  # TODO: 从上下文追踪已完成步骤
+                next_steps=[current_phase],  # TODO: 从上下文推断下一步
+                eta_seconds=eta_seconds,
+                blockers=blockers or [],
+                message=message,
+            )
+
+            logger.debug(
+                f"Progress report sent to Automaton: {task_id} - {progress}% "
+                f"({current_phase})"
+            )
+        except Exception as e:
+            # 进度报告失败不应影响主流程
+            logger.warning(f"Failed to send progress report to Automaton: {e}")
+
+    async def _send_error_report_to_automaton(
+        self,
+        task_id: str,
+        error_message: str,
+        error_code: str | None = None,
+        severity: str = "error",
+        recoverable: bool = True,
+        context: dict | None = None,
+    ) -> None:
+        """Send error report to Automaton via interagent WebSocket."""
+        try:
+            from nanobot.interagent.error_reporter import ErrorHandler, ErrorSeverity
+            import os
+
+            # 检查是否启用 interagent
+            if not os.getenv("INTERAGENT_SECRET"):
+                return
+
+            # 使用错误处理器
+            error_handler = ErrorHandler()
+
+            # 映射严重性
+            severity_map = {
+                "warning": ErrorSeverity.WARNING,
+                "error": ErrorSeverity.ERROR,
+                "critical": ErrorSeverity.CRITICAL,
+            }
+            error_severity = severity_map.get(severity, ErrorSeverity.ERROR)
+
+            # 创建并发送错误报告
+            error_report = error_handler.create_error_report(
+                task_id=task_id,
+                message=error_message,
+                severity=error_severity,
+                recoverable=recoverable,
+                error_code=error_code,
+                context=context or {},
+            )
+
+            # TODO: 发送错误报告到 Automaton
+            logger.error(f"Error occurred: {error_message}")
+
+        except Exception as e:
+            # 错误报告失败不应影响主流程
+            logger.warning(f"Failed to send error report to Automaton: {e}")
 
     async def process_direct(
         self,

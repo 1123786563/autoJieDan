@@ -26,3 +26,11 @@ export {
   type PricingConfig,
   type BidGeneratorConfig,
 } from "./bid-generator.js";
+
+export {
+  DiscoveryScheduler,
+  createDiscoveryScheduler,
+  type DiscoverySchedulerConfig,
+  type DiscoveryStats,
+  type DiscoveryResult,
+} from "./discovery-scheduler.js";

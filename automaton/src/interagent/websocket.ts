@@ -9,6 +9,12 @@
 import WebSocket, { WebSocketServer as WsServer, RawData } from "ws";
 import { EventEmitter } from "events";
 import { ulid } from "ulid";
+import type { Database } from "better-sqlite3";
+import { MessagePersistenceService } from "./message-persistence.js";
+import { ReconnectionHandler, type ReconnectRequest, type StateSyncResponse, type SyncCompleteAck } from "./reconnection-handler.js";
+import { createLogger } from "../observability/logger.js";
+
+const logger = createLogger("websocket-server");
 
 // ============================================================================
 // 类型定义
@@ -137,12 +143,18 @@ export type InteragentEvent =
 export interface ClientInfo {
   /** 客户端 DID */
   did: string;
+  /** 连接 ID (用于重连状态同步) */
+  connectionId: string;
   /** 连接时间 */
   connectedAt: Date;
   /** 最后活动时间 */
   lastActivity: Date;
   /** 心跳计数 */
   heartbeatCount: number;
+  /** 当前消息序列号 */
+  currentSequence: number;
+  /** 最后同步的序列号 */
+  lastSyncedSequence: number;
 }
 
 /** WebSocket 服务器配置 */
@@ -157,6 +169,14 @@ export interface WebSocketServerConfig {
   maxConnections?: number;
   /** 主机绑定 */
   host?: string;
+  /** 数据库实例 (用于消息持久化) */
+  db?: Database;
+  /** 消息缓冲区大小 */
+  messageBufferSize?: number;
+  /** 消息过期时间 (小时) */
+  messageTTLHours?: number;
+  /** 启用重连状态同步 */
+  enableReconnectionSync?: boolean;
 }
 
 // ============================================================================
@@ -172,19 +192,35 @@ export class InteragentWebSocketServer extends EventEmitter {
   private config: Required<WebSocketServerConfig>;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private isShuttingDown = false;
+  private messagePersistence: MessagePersistenceService | null = null;
+  private reconnectionHandler: ReconnectionHandler | null = null;
+  private globalSequence: number = 0;
 
   /** 默认配置 */
-  private static readonly DEFAULT_CONFIG: Required<WebSocketServerConfig> = {
+  private static readonly DEFAULT_CONFIG: Required<Omit<WebSocketServerConfig, 'db'>> & { db?: Database } = {
     port: 10791,
     heartbeatInterval: 30000, // 30 秒
     connectionTimeout: 60000, // 60 秒
     maxConnections: 10,
     host: "0.0.0.0",
+    db: undefined,
+    messageBufferSize: 10000,
+    messageTTLHours: 24,
+    enableReconnectionSync: true,
   };
 
   constructor(config: Partial<WebSocketServerConfig> = {}) {
     super();
-    this.config = { ...InteragentWebSocketServer.DEFAULT_CONFIG, ...config };
+    this.config = { ...InteragentWebSocketServer.DEFAULT_CONFIG, ...config } as Required<WebSocketServerConfig>;
+
+    // 初始化消息持久化和重连处理器
+    if (this.config.db && this.config.enableReconnectionSync) {
+      this.messagePersistence = new MessagePersistenceService(
+        this.config.db,
+        this.config.messageTTLHours * 60 * 60 * 1000
+      );
+      this.reconnectionHandler = new ReconnectionHandler(this.messagePersistence);
+    }
   }
 
   /**
@@ -253,16 +289,21 @@ export class InteragentWebSocketServer extends EventEmitter {
       return;
     }
 
-    // 从 URL 参数获取客户端 DID
+    // 从 URL 参数获取客户端 DID 和连接 ID
     const url = (request as { url?: string })?.url || "";
     const urlParams = new URLSearchParams(url.split("?")[1] || "");
     const clientDid = urlParams.get("did") || `did:anp:unknown:${ulid()}`;
+    const connectionId = urlParams.get("connectionId") || ulid();
+    const lastSequence = parseInt(urlParams.get("lastSeq") || "0", 10);
 
     const clientInfo: ClientInfo = {
       did: clientDid,
+      connectionId,
       connectedAt: new Date(),
       lastActivity: new Date(),
       heartbeatCount: 0,
+      currentSequence: 0,
+      lastSyncedSequence: lastSequence,
     };
 
     this.clients.set(ws, clientInfo);
@@ -275,11 +316,11 @@ export class InteragentWebSocketServer extends EventEmitter {
 
     ws.on("close", (code: number, reason: Buffer) => {
       this.clients.delete(ws);
-      this.emit("client:disconnected", { did: clientInfo.did, code, reason: reason.toString() });
+      this.emit("client:disconnected", { did: clientInfo.did, connectionId, code, reason: reason.toString() });
     });
 
     ws.on("error", (error: Error) => {
-      this.emit("client:error", { did: clientInfo.did, error });
+      this.emit("client:error", { did: clientInfo.did, connectionId, error });
     });
 
     ws.on("pong", () => {
@@ -316,23 +357,93 @@ export class InteragentWebSocketServer extends EventEmitter {
     clientInfo.lastActivity = new Date();
 
     try {
-      const message = JSON.parse(data.toString()) as InteragentEvent;
-      this.emit("message", { did: clientInfo.did, message });
+      const message = JSON.parse(data.toString()) as InteragentEvent | ReconnectRequest | SyncCompleteAck;
+
+      // 处理重连请求
+      if (message.type === "reconnect.request" && this.reconnectionHandler) {
+        this.handleReconnectRequest(ws, clientInfo, message as ReconnectRequest);
+        return;
+      }
+
+      // 处理同步完成确认
+      if (message.type === "sync.complete.ack" && this.reconnectionHandler) {
+        this.reconnectionHandler.handleSyncCompleteAck(message as SyncCompleteAck);
+        return;
+      }
+
+      // 处理 freelance 消息类型
+      const messageType = message.type;
+      if (this.isFreelanceMessage(messageType)) {
+        this.handleFreelanceMessage(ws, clientInfo, message as any);
+        return;
+      }
+
+      // 处理普通消息
+      this.emit("message", { did: clientInfo.did, connectionId: clientInfo.connectionId, message });
     } catch (error) {
-      this.emit("message:error", { did: clientInfo.did, error, raw: data.toString() });
+      this.emit("message:error", { did: clientInfo.did, connectionId: clientInfo.connectionId, error, raw: data.toString() });
     }
+  }
+
+  /**
+   * 处理重连请求
+   */
+  private handleReconnectRequest(ws: WebSocket, clientInfo: ClientInfo, request: ReconnectRequest): void {
+    if (!this.reconnectionHandler) return;
+
+    logger.info("Handling reconnect request", {
+      connectionId: request.connectionId,
+      lastSeq: request.lastSeq,
+    });
+
+    // 更新客户端信息
+    clientInfo.lastSyncedSequence = request.lastSeq;
+
+    // 获取状态同步响应
+    const syncResponse = this.reconnectionHandler.handleReconnectRequest(request);
+
+    // 发送同步响应
+    this.sendToClient(ws, syncResponse as unknown as InteragentEvent);
+
+    this.emit("reconnect:sync", {
+      connectionId: request.connectionId,
+      messageCount: syncResponse.messages.length,
+    });
   }
 
   /**
    * 发送消息到客户端
    */
-  private sendToClient(ws: WebSocket, message: InteragentEvent): boolean {
+  private sendToClient(ws: WebSocket, message: InteragentEvent, persist: boolean = false): boolean {
     if (ws.readyState !== WebSocket.OPEN) {
       return false;
     }
 
+    const clientInfo = this.clients.get(ws);
+    if (!clientInfo) return false;
+
     try {
-      ws.send(JSON.stringify(message));
+      // 增加序列号
+      this.globalSequence++;
+      clientInfo.currentSequence = this.globalSequence;
+
+      // 添加序列号到消息
+      const messageWithSeq = {
+        ...message,
+        sequence: this.globalSequence,
+      };
+
+      // 持久化消息（如果启用）
+      if (persist && this.messagePersistence) {
+        this.messagePersistence.persistMessage(
+          clientInfo.connectionId,
+          this.globalSequence,
+          message.type,
+          message
+        );
+      }
+
+      ws.send(JSON.stringify(messageWithSeq));
       return true;
     } catch (error) {
       this.emit("send:error", { error, message });
@@ -343,10 +454,10 @@ export class InteragentWebSocketServer extends EventEmitter {
   /**
    * 发送事件给指定客户端
    */
-  sendToDid(targetDid: string, event: InteragentEvent): boolean {
+  sendToDid(targetDid: string, event: InteragentEvent, persist: boolean = false): boolean {
     for (const [ws, info] of this.clients) {
       if (info.did === targetDid) {
-        return this.sendToClient(ws, event);
+        return this.sendToClient(ws, event, persist);
       }
     }
     return false;
@@ -355,10 +466,10 @@ export class InteragentWebSocketServer extends EventEmitter {
   /**
    * 广播事件给所有客户端
    */
-  broadcast(event: InteragentEvent): number {
+  broadcast(event: InteragentEvent, persist: boolean = false): number {
     let sent = 0;
     for (const [ws] of this.clients) {
-      if (this.sendToClient(ws, event)) {
+      if (this.sendToClient(ws, event, persist)) {
         sent++;
       }
     }
@@ -428,6 +539,381 @@ export class InteragentWebSocketServer extends EventEmitter {
       clientCount: this.clients.size,
       clients: this.getConnectedClients(),
     };
+  }
+
+  /**
+   * 获取错过的消息（用于重连状态同步）
+   */
+  async getMissedEvents(connectionId: string, lastSequence: number): Promise<any[]> {
+    if (!this.messagePersistence) {
+      return [];
+    }
+
+    const messages = this.messagePersistence.getMissedMessages(connectionId, lastSequence);
+    return messages.map((msg) => ({
+      id: msg.id,
+      sequence: msg.sequence,
+      type: msg.type,
+      payload: msg.payload,
+      createdAt: msg.createdAt.toISOString(),
+    }));
+  }
+
+  /**
+   * 获取消息持久化服务
+   */
+  getMessagePersistence(): MessagePersistenceService | null {
+    return this.messagePersistence;
+  }
+
+  /**
+   * 获取重连处理器
+   */
+  getReconnectionHandler(): ReconnectionHandler | null {
+    return this.reconnectionHandler;
+  }
+
+  /**
+   * 清理过期消息
+   */
+  cleanupExpiredMessages(): number {
+    if (!this.messagePersistence) {
+      return 0;
+    }
+    return this.messagePersistence.cleanupExpired();
+  }
+
+  /**
+   * 检查消息是否为 freelance 消息类型
+   */
+  private isFreelanceMessage(messageType: string): boolean {
+    const freelanceMessageTypes = [
+      "GenesisPrompt",
+      "GenesisPromptAck",
+      "TaskAccept",
+      "TaskReject",
+      "ProgressReport",
+      "ProgressReportAck",
+      "ErrorReport",
+      "ErrorReportAck",
+      "ReconnectRequest",
+      "StateSyncResponse",
+      "SyncCompleteAck",
+      "HumanInterventionRequest",
+      "HumanInterventionResponse",
+      "TaskPause",
+      "TaskResume",
+      "TaskCancel",
+    ];
+    return freelanceMessageTypes.includes(messageType);
+  }
+
+  /**
+   * 处理 freelance 消息
+   */
+  private handleFreelanceMessage(
+    ws: WebSocket,
+    clientInfo: ClientInfo,
+    message: any
+  ): void {
+    logger.debug("Handling freelance message", {
+      type: message.type,
+      from: clientInfo.did,
+    });
+
+    // 根据 @type 字段确定具体的消息类型
+    const messageType = message["@type"] || message.type;
+
+    switch (messageType) {
+      case "freelance:ProgressReport":
+        this.emit("freelance:progress", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+
+      case "freelance:ErrorReport":
+        this.emit("freelance:error", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+
+      case "freelance:GenesisPromptAck":
+        this.emit("freelance:genesis_ack", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+
+      case "freelance:TaskAccept":
+        this.emit("freelance:task_accept", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+
+      case "freelance:TaskReject":
+        this.emit("freelance:task_reject", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+
+      case "freelance:HumanInterventionResponse":
+        this.emit("freelance:intervention_response", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+
+      case "freelance:ReconnectRequest":
+        // 重连请求由 handleReconnectRequest 处理
+        if (this.reconnectionHandler) {
+          this.handleReconnectRequest(ws, clientInfo, message);
+        }
+        break;
+
+      default:
+        // 未知的 freelance 消息类型，记录日志
+        logger.warn("Unknown freelance message type", { messageType });
+        this.emit("freelance:unknown", {
+          did: clientInfo.did,
+          connectionId: clientInfo.connectionId,
+          message,
+        });
+        break;
+    }
+  }
+
+  /**
+   * 发送 Genesis Prompt 到 Nanobot
+   */
+  sendGenesisPrompt(
+    targetDid: string,
+    payload: {
+      taskId: string;
+      projectId: string;
+      goalId: string;
+      genesisPrompt: string;
+      context: Record<string, unknown>;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "GenesisPrompt",
+      "@type": "freelance:GenesisPrompt",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:taskId": payload.taskId,
+        "freelance:projectId": payload.projectId,
+        "freelance:goalId": payload.goalId,
+        "anp:prompt": payload.genesisPrompt,
+        "anp:context": payload.context,
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
+  }
+
+  /**
+   * 发送进度报告确认到 Nanobot
+   */
+  sendProgressReportAck(
+    targetDid: string,
+    payload: {
+      taskId: string;
+      reportId: string;
+      actionRequired?: string;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "ProgressReportAck",
+      "@type": "freelance:ProgressReportAck",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:taskId": payload.taskId,
+        "freelance:reportId": payload.reportId,
+        "freelance:acknowledgedAt": new Date().toISOString(),
+        "freelance:actionRequired": payload.actionRequired,
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
+  }
+
+  /**
+   * 发送错误报告确认到 Nanobot
+   */
+  sendErrorReportAck(
+    targetDid: string,
+    payload: {
+      taskId: string;
+      reportId: string;
+      interventionCreated?: boolean;
+      interventionId?: string;
+      actionRequired?: string;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "ErrorReportAck",
+      "@type": "freelance:ErrorReportAck",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:taskId": payload.taskId,
+        "freelance:reportId": payload.reportId,
+        "freelance:acknowledgedAt": new Date().toISOString(),
+        "freelance:interventionCreated": payload.interventionCreated,
+        "freelance:interventionId": payload.interventionId,
+        "freelance:actionRequired": payload.actionRequired,
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
+  }
+
+  /**
+   * 发送人工介入请求到 Nanobot
+   */
+  sendHumanInterventionRequest(
+    targetDid: string,
+    payload: {
+      interventionId: string;
+      interventionType: string;
+      projectId?: string;
+      goalId?: string;
+      taskId?: string;
+      reason: string;
+      context: Record<string, unknown>;
+      priority: "low" | "normal" | "high" | "urgent";
+      slaDeadline: string;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "HumanInterventionRequest",
+      "@type": "freelance:HumanInterventionRequest",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:interventionId": payload.interventionId,
+        "freelance:interventionType": payload.interventionType,
+        "freelance:projectId": payload.projectId,
+        "freelance:goalId": payload.goalId,
+        "freelance:taskId": payload.taskId,
+        "freelance:reason": payload.reason,
+        "freelance:context": payload.context,
+        "freelance:priority": payload.priority,
+        "freelance:slaDeadline": payload.slaDeadline,
+        "freelance:requestedAt": new Date().toISOString(),
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
+  }
+
+  /**
+   * 发送任务暂停命令到 Nanobot
+   */
+  sendTaskPause(
+    targetDid: string,
+    payload: {
+      taskId: string;
+      projectId?: string;
+      reason: string;
+      resumeAt?: string;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "TaskPause",
+      "@type": "freelance:TaskPause",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:taskId": payload.taskId,
+        "freelance:projectId": payload.projectId,
+        "freelance:pausedAt": new Date().toISOString(),
+        "freelance:reason": payload.reason,
+        "freelance:resumeAt": payload.resumeAt,
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
+  }
+
+  /**
+   * 发送任务恢复命令到 Nanobot
+   */
+  sendTaskResume(
+    targetDid: string,
+    payload: {
+      taskId: string;
+      projectId?: string;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "TaskResume",
+      "@type": "freelance:TaskResume",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:taskId": payload.taskId,
+        "freelance:projectId": payload.projectId,
+        "freelance:resumedAt": new Date().toISOString(),
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
+  }
+
+  /**
+   * 发送任务取消命令到 Nanobot
+   */
+  sendTaskCancel(
+    targetDid: string,
+    payload: {
+      taskId: string;
+      projectId?: string;
+      reason: string;
+      cleanupRequired?: boolean;
+    }
+  ): boolean {
+    const event = {
+      id: ulid(),
+      type: "TaskCancel",
+      "@type": "freelance:TaskCancel",
+      timestamp: new Date().toISOString(),
+      source: "did:anp:automaton:main",
+      target: targetDid,
+      payload: {
+        "freelance:taskId": payload.taskId,
+        "freelance:projectId": payload.projectId,
+        "freelance:cancelledAt": new Date().toISOString(),
+        "freelance:reason": payload.reason,
+        "freelance:cleanupRequired": payload.cleanupRequired ?? false,
+      },
+    };
+
+    return this.sendToDid(targetDid, event as unknown as InteragentEvent, true);
   }
 }
 

@@ -1,0 +1,176 @@
+# Prometheus Configuration for AutoJieDan
+# Phase 1F-02: Prometheus Main Configuration
+
+global:
+  # Scrape interval for all targets
+  scrape_interval: 15s
+  # Evaluation interval for rules
+  evaluation_interval: 15s
+  # Scrape timeout
+  scrape_timeout: 10s
+  # External labels
+  external_labels:
+    cluster: 'autojiedan'
+    environment: '${ENVIRONMENT:-development}'
+
+# AlertManager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+      timeout: 10s
+      api_version: v2
+
+# Rule files
+rule_files:
+  - '/etc/prometheus/alerts.yml'
+  # Add additional rule files here as needed
+  # - '/etc/prometheus/recording_rules.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # Automaton service metrics
+  - job_name: 'automaton'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['automaton:18790']
+        labels:
+          service: 'automaton'
+          component: 'runtime'
+
+  # Nanobot service metrics
+  - job_name: 'nanobot'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['nanobot:18792']
+        labels:
+          service: 'nanobot'
+          component: 'assistant'
+
+  # Automaton ANP protocol metrics
+  - job_name: 'automaton-anp'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics/anp'
+    static_configs:
+      - targets: ['automaton:18790']
+        labels:
+          service: 'automaton'
+          component: 'anp-protocol'
+
+  # Nanobot ANP protocol metrics
+  - job_name: 'nanobot-anp'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics/anp'
+    static_configs:
+      - targets: ['nanobot:18792']
+        labels:
+          service: 'nanobot'
+          component: 'anp-protocol'
+
+  # Freelance business metrics (Automaton)
+  - job_name: 'freelance-business'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: '/metrics/freelance'
+    static_configs:
+      - targets: ['automaton:18790']
+        labels:
+          service: 'automaton'
+          component: 'business'
+
+  # LLM provider metrics
+  - job_name: 'llm-provider'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    metrics_path: '/metrics/llm'
+    static_configs:
+      - targets: ['automaton:18790']
+        labels:
+          service: 'automaton'
+          component: 'llm-provider'
+
+  # Database metrics (SQLite)
+  - job_name: 'database'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    metrics_path: '/metrics/database'
+    static_configs:
+      - targets: ['automaton:18790']
+        labels:
+          service: 'automaton'
+          component: 'database'
+
+  # WebSocket connection metrics
+  - job_name: 'websocket'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metrics_path: '/metrics/websocket'
+    static_configs:
+      - targets: ['automaton:18790']
+        labels:
+          service: 'automaton'
+          component: 'websocket'
+
+  # Node Exporter (optional - system metrics)
+  - job_name: 'node-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'system'
+          component: 'host-metrics'
+
+  # cAdvisor (optional - container metrics)
+  - job_name: 'cadvisor'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'system'
+          component: 'container-metrics'
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention.time: 15d
+    retention.size: 10GB
+
+# Remote write (optional - for long-term storage)
+# remote_write:
+#   - url: 'http://cortex:9009/api/v1/push'
+#     send_exemplars: true
+
+# Tracing configuration (optional)
+# tracing:
+#   endpoint: "jaeger:4318"
+#   client_type: "grpc"
+#   headers:
+#     X-Trace-Header: "autojiedan-prometheus"
+
+# HTTP server configuration
+web:
+  external_url: '${PROMETHEUS_EXTERNAL_URL:-http://localhost:9090}'
+  page_title: 'AutoJieDan Prometheus'
+  enable_admin_api: false
+  enable_lifecycle: true
+
+# TLS configuration (optional, enable for production)
+# tls_config:
+#   cert_file: /etc/prometheus/certs/server.crt
+#   key_file: /etc/prometheus/certs/server.key
+#   client_ca_file: /etc/prometheus/certs/ca.crt
