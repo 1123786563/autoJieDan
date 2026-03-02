@@ -43,7 +43,7 @@ autoJieDan/
 │   ├── tests/               # 测试文件
 │   └── CLAUDE.md            # Nanobot 开发指南
 │
-├── docs/                    # 项目文档
+├──autoJieDanDocs/                    # 项目文档
 ├── config/                  # 配置文件
 ├── docker-compose.yml       # Docker Compose 配置
 ├── .env.example             # 环境变量模板
@@ -112,12 +112,12 @@ ruff check .              # 代码检查
 
 ### 核心组件
 
-| 组件 | 功能 |
-|------|------|
-| ANP 协议 | 基于 DID 的去中心化身份验证 |
-| WebSocket 通道 | 实时双向通信 |
-| HMAC 签名 | 防篡改消息验证 |
-| 死信队列 | 消息确认、重试机制 |
+| 组件           | 功能                        |
+| -------------- | --------------------------- |
+| ANP 协议       | 基于 DID 的去中心化身份验证 |
+| WebSocket 通道 | 实时双向通信                |
+| HMAC 签名      | 防篡改消息验证              |
+| 死信队列       | 消息确认、重试机制          |
 
 ## Core Principles
 
@@ -129,11 +129,11 @@ ruff check .              # 代码检查
 
 ## Tech Stack
 
-| 组件 | 技术 |
-|------|------|
+| 组件                | 技术                                                            |
+| ------------------- | --------------------------------------------------------------- |
 | **Automaton** | TypeScript 5.9, Node.js 20+, pnpm, viem, better-sqlite3, vitest |
-| **Nanobot** | Python 3.11+, LiteLLM, Pydantic v2, MCP, pytest |
-| **基础设施** | Docker, Prometheus, Grafana, ELK 栈 |
+| **Nanobot**   | Python 3.11+, LiteLLM, Pydantic v2, MCP, pytest                 |
+| **基础设施**  | Docker, Prometheus, Grafana, ELK 栈                             |
 
 ## Common Commands
 
@@ -177,13 +177,13 @@ ruff check . --fix        # 自动修复
 
 ## Environment Variables
 
-| 变量 | 必需 | 说明 |
-|------|------|------|
-| `INTERAGENT_SECRET` | ✅ | HMAC 认证密钥 |
-| `OPENAI_API_KEY` | ✅ | OpenAI API 密钥 |
-| `AUTOMATON_HTTP_PORT` | | Automaton HTTP 端口 (默认: 18790) |
-| `NANOBOT_HTTP_PORT` | | Nanobot HTTP 端口 (默认: 18792) |
-| `LOG_LEVEL` | | 日志级别 (默认: info) |
+| 变量                    | 必需 | 说明                              |
+| ----------------------- | ---- | --------------------------------- |
+| `INTERAGENT_SECRET`   | ✅   | HMAC 认证密钥                     |
+| `OPENAI_API_KEY`      | ✅   | OpenAI API 密钥                   |
+| `AUTOMATON_HTTP_PORT` |      | Automaton HTTP 端口 (默认: 18790) |
+| `NANOBOT_HTTP_PORT`   |      | Nanobot HTTP 端口 (默认: 18792)   |
+| `LOG_LEVEL`           |      | 日志级别 (默认: info)             |
 
 完整配置请参考 `.env.example`。
 
