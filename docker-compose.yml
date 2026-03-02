@@ -39,12 +39,21 @@ services:
       - AUTOMATON_PRIVATE_KEY=${AUTOMATON_PRIVATE_KEY:-}
       - BASE_RPC_URL=${BASE_RPC_URL:-}
 
+      # Freelance module configuration
+      - FREELANCE_ENABLED=${FREELANCE_ENABLED:-false}
+      - UPWORK_CLIENT_ID=${UPWORK_CLIENT_ID:-}
+      - UPWORK_CLIENT_SECRET=${UPWORK_CLIENT_SECRET:-}
+      - UPWORK_ACCESS_TOKEN=${UPWORK_ACCESS_TOKEN:-}
+      - UPWORK_REFRESH_TOKEN=${UPWORK_REFRESH_TOKEN:-}
+
     volumes:
       # Persistent data storage
       - automaton-data:/root/.automaton/data
       - automaton-keys:/root/.automaton/keys
       # Optional: Mount config file
       - ${AUTOMATON_CONFIG_PATH:-./automaton/config.yml}:/root/.automaton/config.yml:ro
+      # Logs directory
+      - ./logs:/app/logs
 
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:10790/health"]

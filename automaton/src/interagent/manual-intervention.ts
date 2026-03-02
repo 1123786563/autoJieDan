@@ -439,8 +439,11 @@ export class ManualInterventionService extends EventEmitter {
 
     for (const row of rows) {
       stats.total += row.count;
-      stats[row.status as keyof typeof stats] =
-        (stats[row.status as keyof typeof stats] as number) + row.count;
+      // Only update numeric status fields (pending, approved, rejected, timeout)
+      const statusKey = row.status as 'pending' | 'approved' | 'rejected' | 'timeout';
+      if (statusKey in stats) {
+        stats[statusKey] += row.count;
+      }
       if (row.intervention_type in stats.byType) {
         stats.byType[row.intervention_type as InterventionType] += row.count;
       }
