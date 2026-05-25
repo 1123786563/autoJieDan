@@ -6,7 +6,7 @@
 # The versions below are the best available at the time of audit
 
 # pypdf: Fix CVE-2026-28351 (UPGRADED)
-pypdf>=6.7.4
+pypdf>=6.12.1
 
 # torch: CVE-2025-2953, CVE-2025-3730, PYSEC-2025-41, PYSEC-2024-259
 # WARNING: Fix versions (2.5.0+) not yet available on PyPI
